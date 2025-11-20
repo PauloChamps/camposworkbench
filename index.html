@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestão de Ferramentas</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        input, select { padding:5px; margin:5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table, th, td { border: 1px solid #aaa; }
+        th, td { padding: 8px; text-align: left; }
+        .btn { padding: 6px 12px; cursor: pointer; }
+        .devolvida { color: green; font-weight: bold; }
+        .pendente { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<h2>Registro de Empréstimo de Ferramentas</h2>
+
+<form id="formEmprestimo">
+    <input type="text" id="numFerramenta" placeholder="Número da ferramenta" required>
+    <input type="text" id="quemEntregou" placeholder="Entregue por (funcionário)" required>
+    <input type="text" id="nomePessoa" placeholder="Nome de quem pegou" required>
+    <input type="text" id="idPessoa" placeholder="ID da pessoa" required>
+    <input type="date" id="dataEmprestimo" required>
+    <button class="btn" type="submit">Registrar</button>
+</form>
+
+<h2>Ferramentas em circulação</h2>
+
+<input type="text" id="busca" placeholder="Buscar por ferramenta, pessoa ou ID...">
+
+<table>
+<thead>
+<tr>
+    <th>Nº Ferramenta</th>
+    <th>Data</th>
+    <th>Entregue por</th>
+    <th>Retirado por</th>
+    <th>ID</th>
+    <th>Status</th>
+    <th>Ações</th>
+</tr>
+</thead>
+<tbody id="listaEmprestimos"></tbody>
+</table>
+
+<!-- Seção do Log de Ferramenta -->
+<div id="logFerramenta" style="display:none;">
+    <h3>Histórico de Empréstimos</h3>
+    <button onclick="voltar()">Voltar</button>
+    <h4>Ferramenta: <span id="numFerramentaLog"></span></h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Quem retirou</th>
+                <th>ID</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="logHistorico"></tbody>
+    </table>
+</div>
+
+<!-- Seção do Log por Pessoa -->
+<div id="logPessoa" style="display:none;">
+    <h3>Histórico de Empréstimos</h3>
+    <button onclick="voltarPessoa()">Voltar</button>
+    <h4>Histórico de: <span id="nomePessoaLog"></span></h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Ferramenta</th>
+                <th>Data</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="logHistoricoPessoa"></tbody>
+    </table>
+</div>
+
+<button class="btn" onclick="exportarCSV()">Exportar para CSV</button>
+
+<script>
+// Armazenamento local
+let emprestimos = JSON.parse(localStorage.getItem("emprestimos")) || [];
+
+// Função para salvar os dados no LocalStorage
+function salvar() {
+    localStorage.setItem("emprestimos", JSON.stringify(emprestimos));
+}
+
+// Função para listar as ferramentas emprestadas
+function listar() {
+    const tbody = document.getElementById("listaEmprestimos");
+    const filtro = document.getElementById("busca").value.toLowerCase();
+
+    tbody.innerHTML = "";
+
+    emprestimos
+        .filter(e => 
+            e.numFerramenta.toLowerCase().includes(filtro) ||
+            e.nomePessoa.toLowerCase().includes(filtro) ||
+            e.idPessoa.toLowerCase().includes(filtro)
+        )
+        .forEach((e, index) => {
+            tbody.innerHTML += `
+            <tr>
+                <td><a href="#" onclick="verLogFerramenta('${e.numFerramenta}')">${e.numFerramenta}</a></td>
+                <td>${e.dataEmprestimo}</td>
+                <td>${e.quemEntregou}</td>
+                <td><a href="#" onclick="verLogPessoa('${e.nomePessoa}')">${e.nomePessoa}</a></td>
+                <td>${e.idPessoa}</td>
+                <td class="${e.devolvida ? 'devolvida' : 'pendente'}">
+                    ${e.devolvida ? 'Devolvida' : 'Pendente'}
+                </td>
+                <td>
+                    ${!e.devolvida ? `<button onclick="marcarDevolvido(${index})">Devolver</button>` : ""}
+                </td>
+            </tr>`;
+        });
+}
+
+// Função para registrar o empréstimo
+document.getElementById("formEmprestimo").addEventListener("submit", function(event) {
+    event.preventDefault();
+
+    const registro = {
+        numFerramenta: document.getElementById("numFerramenta").value,
+        quemEntregou: document.getElementById("quemEntregou").value,
+        nomePessoa: document.getElementById("nomePessoa").value,
+        idPessoa: document.getElementById("idPessoa").value,
+        dataEmprestimo: document.getElementById("dataEmprestimo").value,
+        devolvida: false,
+        dataDevolucao: null
+    };
+
+    emprestimos.push(registro);
+    salvar();
+    listar();
+    this.reset();
+});
+
+// Função para marcar como devolvido
+function marcarDevolvido(index) {
+    emprestimos[index].devolvida = true;
+    emprestimos[index].dataDevolucao = new Date().toISOString().split("T")[0];
+    salvar();
+    listar();
+}
+
+// Função para exibir o log de empréstimos de uma ferramenta
+function verLogFerramenta(numFerramenta) {
+    const logFerramenta = emprestimos.filter(e => e.numFerramenta === numFerramenta);
+
+    document.getElementById("numFerramentaLog").textContent = numFerramenta;
+    const tbody = document.getElementById("logHistorico");
+
+    tbody.innerHTML = ""; // Limpa a tabela antes de preencher
+
+    logFerramenta.forEach((registro) => {
+        tbody.innerHTML += `
+        <tr>
+            <td>${registro.dataEmprestimo}</td>
+            <td>${registro.nomePessoa}</td>
+            <td>${registro.idPessoa}</td>
+            <td class="${registro.devolvida ? 'devolvida' : 'pendente'}">
+                ${registro.devolvida ? 'Devolvida' : 'Pendente'}
+            </td>
+        </tr>`;
+    });
+
+    document.getElementById("logFerramenta").style.display = 'block'; // Mostra a seção de log
+    document.getElementById("listaEmprestimos").style.display = 'none'; // Esconde a lista inicial
+}
+
+// Função para exibir o log de empréstimos de uma pessoa
+function verLogPessoa(nomePessoa) {
+    const logPessoa = emprestimos.filter(e => e.nomePessoa === nomePessoa);
+
+    document.getElementById("nomePessoaLog").textContent = nomePessoa;
+    const tbody = document.getElementById("logHistoricoPessoa");
+
+    tbody.innerHTML = ""; // Limpa a tabela antes de preencher
+
+    logPessoa.forEach((registro) => {
+        tbody.innerHTML += `
+        <tr>
+            <td>${registro.numFerramenta}</td>
+            <td>${registro.dataEmprestimo}</td>
+            <td class="${registro.devolvida ? 'devolvida' : 'pendente'}">
+                ${registro.devolvida ? 'Devolvida' : 'Pendente'}
+            </td>
+        </tr>`;
+    });
+
+    document.getElementById("logPessoa").style.display = 'block'; // Mostra a seção de log
+    document.getElementById("listaEmprestimos").style.display = 'none'; // Esconde a lista inicial
+}
+
+// Função para voltar ao histórico da ferramenta
+function voltar() {
+    document.getElementById("logFerramenta").style.display = 'none';
+    document.getElementById("listaEmprestimos").style.display = 'block';
+}
+
+// Função para voltar ao histórico da pessoa
+function voltarPessoa() {
+    document.getElementById("logPessoa").style.display = 'none';
+    document.getElementById("listaEmprestimos").style.display = 'block';
+}
+
+// Função para exportar os dados para CSV
+function exportarCSV() {
+    const headers = ["Nº Ferramenta", "Data", "Entregue por", "Retirado por", "ID", "Status"];
+    const rows = emprestimos.map(e => [
+        e.numFerramenta,
+        e.dataEmprestimo,
+        e.quemEntregou,
+        e.nomePessoa,
+        e.idPessoa,
+        e.devolvida ? "Devolvida" : "Pendente"
+    ]);
+
+    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
+    rows.forEach(row => {
+        csvContent += row.join(",") + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "emprestimos_ferramentas.csv");
+    document.body.appendChild(link);
+    link.click();
+}
+
+document.getElementById("busca").addEventListener("input", listar);
+
+// Carregar a lista ao abrir
+listar();
+</script>
+
+</body>
+</html>
