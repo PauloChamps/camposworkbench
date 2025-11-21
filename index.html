@@ -127,8 +127,19 @@ function listar() {
 document.getElementById("formEmprestimo").addEventListener("submit", function(event) {
     event.preventDefault();
 
+    const numFerramenta = document.getElementById("numFerramenta").value;
+    
+    // Verificando se a ferramenta já foi emprestada
+    const ferramentaExistente = emprestimos.some(e => e.numFerramenta === numFerramenta);
+    
+    if (ferramentaExistente) {
+        // Se a ferramenta já foi emprestada, exibe um alerta
+        alert("Esta ferramenta já foi registrada. Não é possível emprestar novamente.");
+        return; // Não permite continuar o processo
+    }
+
     const registro = {
-        numFerramenta: document.getElementById("numFerramenta").value,
+        numFerramenta: numFerramenta,
         quemEntregou: document.getElementById("quemEntregou").value,
         nomePessoa: document.getElementById("nomePessoa").value,
         idPessoa: document.getElementById("idPessoa").value,
@@ -137,11 +148,13 @@ document.getElementById("formEmprestimo").addEventListener("submit", function(ev
         dataDevolucao: null
     };
 
+    // Adiciona o novo empréstimo à lista
     emprestimos.push(registro);
-    salvar();
-    listar();
-    this.reset();
+    salvar(); // Salva no localStorage
+    listar(); // Atualiza a lista na tela
+    this.reset(); // Limpa o formulário
 });
+
 
 // Função para marcar como devolvido
 function marcarDevolvido(index) {
