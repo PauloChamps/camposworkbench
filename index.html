@@ -12,6 +12,7 @@
         .btn { padding: 6px 12px; cursor: pointer; }
         .devolvida { color: green; font-weight: bold; }
         .pendente { color: red; font-weight: bold; }
+        .btn-excluir { color: red; cursor: pointer; font-weight: bold; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -23,6 +24,7 @@
     <input type="text" id="quemEntregou" placeholder="Entregue por (funcionário)" required>
     <input type="text" id="idPessoa" placeholder="ID da pessoa" required>
     <input type="text" id="nomePessoa" placeholder="Nome de quem pegou" required>
+    
     <input type="date" id="dataEmprestimo" required>
     <button class="btn" type="submit">Registrar</button>
 </form>
@@ -35,12 +37,12 @@
 <thead>
 <tr>
     <th>Nº Ferramenta</th>
-    <th>Data Empréstimo</th>
+    <th>Data</th>
     <th>Entregue por</th>
     <th>Retirado por</th>
     <th>ID</th>
     <th>Status</th>
-    <th>Data Entrega</th>
+    <th>Data Devolução</th>
     <th>Ações</th>
 </tr>
 </thead>
@@ -59,7 +61,7 @@
                 <th>Quem retirou</th>
                 <th>ID</th>
                 <th>Status</th>
-                <th>Data Entrega</th>
+                <th>Data Devolução</th>
             </tr>
         </thead>
         <tbody id="logHistorico"></tbody>
@@ -77,7 +79,7 @@
                 <th>Ferramenta</th>
                 <th>Data</th>
                 <th>Status</th>
-                <th>Data Entrega</th>
+                <th>Data Devolução</th>
             </tr>
         </thead>
         <tbody id="logHistoricoPessoa"></tbody>
@@ -86,35 +88,32 @@
 
 <button class="btn" onclick="exportarCSV()">Exportar para CSV</button>
 
-<!-- ... cabeçalho e form permanecem iguais ... -->
-
 <script>
 const funcionarios = [
     { id: '123', nome: 'João Silva' },
-    { id: '456', nome: 'Maria Souza' },
+    { id: '404', nome: 'Paulo Campos' },
     { id: '789', nome: 'Carlos Oliveira' }
 ];
 
+// Carregar dados do LocalStorage
 let emprestimos = JSON.parse(localStorage.getItem("emprestimos")) || [];
 
+// Função para salvar dados
 function salvar() {
     localStorage.setItem("emprestimos", JSON.stringify(emprestimos));
 }
 
-// Função para formatar datas para DD/MM/AAAA
-function formatarData(dataStr) {
-    if(!dataStr) return "-";
-    const d = new Date(dataStr);
-    const dia = String(d.getDate()).padStart(2, '0');
-    const mes = String(d.getMonth() + 1).padStart(2, '0');
-    const ano = d.getFullYear();
-    return `${dia}/${mes}/${ano}`;
+// Formata a data para dd/mm/aaaa
+function formatarData(data) {
+    if (!data) return "-";
+    const d = new Date(data);
+    return `${("0"+d.getDate()).slice(-2)}/${("0"+(d.getMonth()+1)).slice(-2)}/${d.getFullYear()}`;
 }
 
+// Listar empréstimos
 function listar() {
     const tbody = document.getElementById("listaEmprestimos");
     const filtro = document.getElementById("busca").value.toLowerCase();
-
     tbody.innerHTML = "";
 
     emprestimos
@@ -134,22 +133,24 @@ function listar() {
                 <td class="${e.devolvida ? 'devolvida' : 'pendente'}">
                     ${e.devolvida ? 'Devolvida' : 'Pendente'}
                 </td>
-                <td>${formatarData(e.dataDevolucao)}</td>
+                <td>${e.dataDevolucao ? formatarData(e.dataDevolucao) : "-"}</td>
                 <td>
                     ${!e.devolvida ? `<button onclick="marcarDevolvido(${index})">Devolver</button>` : ""}
+                    <span class="btn-excluir" onclick="excluirEmprestimo(${index})">&times;</span>
                 </td>
             </tr>`;
         });
 }
 
+// Registrar empréstimo
 document.getElementById("formEmprestimo").addEventListener("submit", function(event) {
     event.preventDefault();
 
     const numFerramenta = document.getElementById("numFerramenta").value;
 
-    const ferramentaExistente = emprestimos.some(e => e.numFerramenta === numFerramenta && !e.devolvida);
+    const ferramentaExistente = emprestimos.some(e => e.numFerramenta === numFerramenta);
     if (ferramentaExistente) {
-        alert("Esta ferramenta já está emprestada. Não é possível registrar novamente.");
+        alert("Esta ferramenta já foi registrada. Não é possível emprestar novamente.");
         return;
     }
 
@@ -169,6 +170,7 @@ document.getElementById("formEmprestimo").addEventListener("submit", function(ev
     this.reset();
 });
 
+// Marcar como devolvido
 function marcarDevolvido(index) {
     emprestimos[index].devolvida = true;
     emprestimos[index].dataDevolucao = new Date().toISOString().split("T")[0];
@@ -176,6 +178,16 @@ function marcarDevolvido(index) {
     listar();
 }
 
+// Excluir empréstimo
+function excluirEmprestimo(index) {
+    if (confirm("Tem certeza que deseja excluir este registro?")) {
+        emprestimos.splice(index, 1);
+        salvar();
+        listar();
+    }
+}
+
+// Log de ferramenta
 function verLogFerramenta(numFerramenta) {
     const logFerramenta = emprestimos.filter(e => e.numFerramenta === numFerramenta);
 
@@ -183,14 +195,16 @@ function verLogFerramenta(numFerramenta) {
     const tbody = document.getElementById("logHistorico");
     tbody.innerHTML = "";
 
-    logFerramenta.forEach(r => {
+    logFerramenta.forEach((r) => {
         tbody.innerHTML += `
         <tr>
             <td>${formatarData(r.dataEmprestimo)}</td>
             <td>${r.nomePessoa}</td>
             <td>${r.idPessoa}</td>
-            <td class="${r.devolvida ? "devolvida" : "pendente"}">${r.devolvida ? "Devolvida" : "Pendente"}</td>
-            <td>${formatarData(r.dataDevolucao)}</td>
+            <td class="${r.devolvida ? 'devolvida' : 'pendente'}">
+                ${r.devolvida ? 'Devolvida' : 'Pendente'}
+            </td>
+            <td>${r.dataDevolucao ? formatarData(r.dataDevolucao) : "-"}</td>
         </tr>`;
     });
 
@@ -198,6 +212,7 @@ function verLogFerramenta(numFerramenta) {
     document.getElementById("listaEmprestimos").style.display = 'none';
 }
 
+// Log de pessoa
 function verLogPessoa(nomePessoa) {
     const logPessoa = emprestimos.filter(e => e.nomePessoa === nomePessoa);
 
@@ -205,13 +220,15 @@ function verLogPessoa(nomePessoa) {
     const tbody = document.getElementById("logHistoricoPessoa");
     tbody.innerHTML = "";
 
-    logPessoa.forEach(r => {
+    logPessoa.forEach((r) => {
         tbody.innerHTML += `
         <tr>
             <td>${r.numFerramenta}</td>
             <td>${formatarData(r.dataEmprestimo)}</td>
-            <td class="${r.devolvida ? "devolvida" : "pendente"}">${r.devolvida ? "Devolvida" : "Pendente"}</td>
-            <td>${formatarData(r.dataDevolucao)}</td>
+            <td class="${r.devolvida ? 'devolvida' : 'pendente'}">
+                ${r.devolvida ? 'Devolvida' : 'Pendente'}
+            </td>
+            <td>${r.dataDevolucao ? formatarData(r.dataDevolucao) : "-"}</td>
         </tr>`;
     });
 
@@ -219,53 +236,49 @@ function verLogPessoa(nomePessoa) {
     document.getElementById("listaEmprestimos").style.display = 'none';
 }
 
-function voltar() {
-    document.getElementById("logFerramenta").style.display = 'none';
-    document.getElementById("listaEmprestimos").style.display = 'block';
-}
-
-function voltarPessoa() {
-    document.getElementById("logPessoa").style.display = 'none';
-    document.getElementById("listaEmprestimos").style.display = 'block';
-}
-
+// Exportar CSV
 function exportarCSV() {
-    const headers = ["Nº Ferramenta", "Data", "Entregue por", "Retirado por", "ID", "Status", "Data de Entrega"];
-    
+    const headers = ["Nº Ferramenta","Data","Entregue por","Retirado por","ID","Status","Data Devolução"];
     const rows = emprestimos.map(e => [
         e.numFerramenta,
         formatarData(e.dataEmprestimo),
-        e.quemEntregou,
+        e.quemEntregou.toUpperCase(),
         e.nomePessoa,
         e.idPessoa,
         e.devolvida ? "Devolvida" : "Pendente",
-        formatarData(e.dataDevolucao)
+        e.dataDevolucao ? formatarData(e.dataDevolucao) : "-"
     ]);
 
-    // Adiciona aspas a cada valor para proteger vírgulas
-    let csvContent = "data:text/csv;charset=utf-8," + headers.map(h => `"${h}"`).join(";") + "\n";
+    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
     rows.forEach(row => {
-        csvContent += row.map(val => `"${val}"`).join(";") + "\n";
+        csvContent += row.join(",") + "\n";
     });
 
+    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    link.href = encodeURI(csvContent);
-    link.download = "emprestimos_ferramentas.csv";
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "emprestimos_ferramentas.csv");
+    document.body.appendChild(link);
     link.click();
 }
 
+// Auto-complete nome pelo ID
 document.getElementById("idPessoa").addEventListener("input", function () {
     const f = funcionarios.find(p => p.id === this.value);
     document.getElementById("nomePessoa").value = f ? f.nome : "";
 });
 
+// Somente números no número da ferramenta
 document.getElementById("numFerramenta").addEventListener("input", function () {
     this.value = this.value.replace(/\D/g, "");
 });
 
+// Filtro em tempo real
 document.getElementById("busca").addEventListener("input", listar);
 
+// Carregar lista ao abrir
 listar();
 </script>
+
 </body>
 </html>
