@@ -1,36 +1,34 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-    <meta charset="UTF-8">
-    <title>Gestão de Ferramentas</title>
-    <style>
-        body { font-family: Arial; margin: 20px; }
-        input, select { padding:5px; margin:5px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        table, th, td { border: 1px solid #aaa; }
-        th, td { padding: 8px; text-align: left; }
-        .btn { padding: 6px 12px; cursor: pointer; }
-        .devolvida { color: green; font-weight: bold; }
-        .pendente { color: red; font-weight: bold; }
-        .btn-excluir { color: red; cursor: pointer; font-weight: bold; margin-left: 5px; }
-    </style>
+<meta charset="UTF-8">
+<title>Gestão de Ferramentas</title>
+<style>
+body { font-family: Arial; margin: 20px; }
+input, select { padding:5px; margin:5px; }
+table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+table, th, td { border: 1px solid #aaa; }
+th, td { padding: 8px; text-align: left; }
+.btn { padding: 6px 12px; cursor: pointer; }
+.devolvida { color: green; font-weight: bold; }
+.pendente { color: red; font-weight: bold; }
+.excluir { color: red; font-weight: bold; cursor: pointer; }
+</style>
 </head>
 <body>
 
-<h2>Empréstimo de Ferramentas</h2>
+<h2>Registro de Empréstimo de Ferramentas</h2>
 
 <form id="formEmprestimo">
     <input type="text" id="numFerramenta" placeholder="Número da ferramenta" required>
     <input type="text" id="quemEntregou" placeholder="Entregue por (funcionário)" required>
     <input type="text" id="idPessoa" placeholder="ID da pessoa" required>
     <input type="text" id="nomePessoa" placeholder="Nome de quem pegou" required>
-    
     <input type="date" id="dataEmprestimo" required>
     <button class="btn" type="submit">Registrar</button>
 </form>
 
 <h2>Ferramentas em circulação</h2>
-
 <input type="text" id="busca" placeholder="Buscar por ferramenta, pessoa ou ID...">
 
 <table>
@@ -49,231 +47,206 @@
 <tbody id="listaEmprestimos"></tbody>
 </table>
 
-<!-- Seção do Log de Ferramenta -->
+<!-- Logs -->
 <div id="logFerramenta" style="display:none;">
-    <h3>Histórico de Empréstimos</h3>
-    <button onclick="window.location.href='index.html'">Voltar</button>
-    <h4>Ferramenta: <span id="numFerramentaLog"></span></h4>
-    <table>
-        <thead>
-            <tr>
-                <th>Data</th>
-                <th>Quem retirou</th>
-                <th>ID</th>
-                <th>Status</th>
-                <th>Data Devolução</th>
-            </tr>
-        </thead>
-        <tbody id="logHistorico"></tbody>
-    </table>
+<h3>Histórico de Empréstimos</h3>
+<a href="index.html">Voltar</a>
+<h4>Ferramenta: <span id="numFerramentaLog"></span></h4>
+<table>
+<thead>
+<tr>
+<th>Data</th><th>Quem retirou</th><th>ID</th><th>Status</th><th>Data Devolução</th>
+</tr>
+</thead>
+<tbody id="logHistorico"></tbody>
+</table>
 </div>
 
-<!-- Seção do Log por Pessoa -->
 <div id="logPessoa" style="display:none;">
-    <h3>Histórico de Empréstimos</h3>
-    <button onclick="window.location.href='index.html'">Voltar</button>
-    <h4>Histórico de: <span id="nomePessoaLog"></span></h4>
-    <table>
-        <thead>
-            <tr>
-                <th>Ferramenta</th>
-                <th>Data</th>
-                <th>Status</th>
-                <th>Data Devolução</th>
-            </tr>
-        </thead>
-        <tbody id="logHistoricoPessoa"></tbody>
-    </table>
+<h3>Histórico de Empréstimos</h3>
+<a href="index.html">Voltar</a>
+<h4>Histórico de: <span id="nomePessoaLog"></span></h4>
+<table>
+<thead>
+<tr>
+<th>Ferramenta</th><th>Data</th><th>Status</th><th>Data Devolução</th>
+</tr>
+</thead>
+<tbody id="logHistoricoPessoa"></tbody>
+</table>
 </div>
 
 <button class="btn" onclick="exportarCSV()">Exportar para CSV</button>
 
-<script>
-const funcionarios = [
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
+import { getFirestore, collection, getDocs, addDoc, updateDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDR5LfYXB0KV63MDsiW_E5z8TemwlSfTGA",
+  authDomain: "camposworkbench.firebaseapp.com",
+  projectId: "camposworkbench",
+  storageBucket: "camposworkbench.firebasestorage.app",
+  messagingSenderId: "588651522200",
+  appId: "1:588651522200:web:80b95c0c44b4edc95888ed"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+window.funcionarios = [
     { id: '123', nome: 'João Silva' },
-    { id: '404', nome: 'Paulo Campos' },
+    { id: '456', nome: 'Maria Souza' },
     { id: '789', nome: 'Carlos Oliveira' }
 ];
 
-// Carregar dados do LocalStorage
-let emprestimos = JSON.parse(localStorage.getItem("emprestimos")) || [];
-
-// Função para salvar dados
-function salvar() {
-    localStorage.setItem("emprestimos", JSON.stringify(emprestimos));
-}
-
-// Formata a data para dd/mm/aaaa
-function formatarData(data) {
-    if (!data) return "-";
-    const d = new Date(data);
-    return `${("0"+d.getDate()).slice(-2)}/${("0"+(d.getMonth()+1)).slice(-2)}/${d.getFullYear()}`;
-}
-
-// Listar empréstimos
-function listar() {
+// ======= FUNÇÕES GLOBAIS =======
+window.listar = async function() {
     const tbody = document.getElementById("listaEmprestimos");
     const filtro = document.getElementById("busca").value.toLowerCase();
     tbody.innerHTML = "";
 
-    emprestimos
-        .filter(e => 
-            e.numFerramenta.toLowerCase().includes(filtro) ||
-            e.nomePessoa.toLowerCase().includes(filtro) ||
-            e.idPessoa.toLowerCase().includes(filtro)
-        )
-        .forEach((e, index) => {
+    const snapshot = await getDocs(collection(db, "emprestimos"));
+    snapshot.forEach((docSnap, index) => {
+        const e = docSnap.data();
+        if(e.numFerramenta.toLowerCase().includes(filtro) ||
+           e.nomePessoa.toLowerCase().includes(filtro) ||
+           e.idPessoa.toLowerCase().includes(filtro)) {
+
             tbody.innerHTML += `
             <tr>
                 <td><a href="#" onclick="verLogFerramenta('${e.numFerramenta}')">${e.numFerramenta}</a></td>
-                <td>${formatarData(e.dataEmprestimo)}</td>
+                <td>${e.dataEmprestimo}</td>
                 <td>${e.quemEntregou.toUpperCase()}</td>
                 <td><a href="#" onclick="verLogPessoa('${e.nomePessoa}')">${e.nomePessoa}</a></td>
                 <td>${e.idPessoa}</td>
-                <td class="${e.devolvida ? 'devolvida' : 'pendente'}">
-                    ${e.devolvida ? 'Devolvida' : 'Pendente'}
-                </td>
-                <td>${e.dataDevolucao ? formatarData(e.dataDevolucao) : "-"}</td>
+                <td class="${e.devolvida ? 'devolvida' : 'pendente'}">${e.devolvida ? 'Devolvida' : 'Pendente'}</td>
+                <td>${e.dataDevolucao || '-'}</td>
                 <td>
-                    ${!e.devolvida ? `<button onclick="marcarDevolvido(${index})">Devolver</button>` : ""}
-                    <span class="btn-excluir" onclick="excluirEmprestimo(${index})">&times;</span>
+                    ${!e.devolvida ? `<button onclick="marcarDevolvido('${docSnap.id}')">Devolver</button>` : ""}
+                    <span class="excluir" onclick="excluirEmprestimo('${docSnap.id}')">X</span>
                 </td>
             </tr>`;
-        });
+        }
+    });
 }
 
-// Registrar empréstimo
-document.getElementById("formEmprestimo").addEventListener("submit", function(event) {
+window.marcarDevolvido = async function(id) {
+    const docRef = doc(db, "emprestimos", id);
+    await updateDoc(docRef, {
+        devolvida: true,
+        dataDevolucao: new Date().toLocaleDateString('pt-BR')
+    });
+    listar();
+}
+
+window.verLogFerramenta = async function(numFerramenta) {
+    document.getElementById("numFerramentaLog").textContent = numFerramenta;
+    const tbody = document.getElementById("logHistorico");
+    tbody.innerHTML = "";
+    const snapshot = await getDocs(collection(db, "emprestimos"));
+    snapshot.forEach(docSnap => {
+        const r = docSnap.data();
+        if(r.numFerramenta === numFerramenta){
+            tbody.innerHTML += `<tr>
+                <td>${r.dataEmprestimo}</td>
+                <td>${r.nomePessoa}</td>
+                <td>${r.idPessoa}</td>
+                <td class="${r.devolvida ? 'devolvida':'pendente'}">${r.devolvida ? 'Devolvida':'Pendente'}</td>
+                <td>${r.dataDevolucao || '-'}</td>
+            </tr>`;
+        }
+    });
+    document.getElementById("logFerramenta").style.display = 'block';
+    document.getElementById("listaEmprestimos").style.display = 'none';
+}
+
+window.verLogPessoa = async function(nomePessoa) {
+    document.getElementById("nomePessoaLog").textContent = nomePessoa;
+    const tbody = document.getElementById("logHistoricoPessoa");
+    tbody.innerHTML = "";
+    const snapshot = await getDocs(collection(db, "emprestimos"));
+    snapshot.forEach(docSnap => {
+        const r = docSnap.data();
+        if(r.nomePessoa === nomePessoa){
+            tbody.innerHTML += `<tr>
+                <td>${r.numFerramenta}</td>
+                <td>${r.dataEmprestimo}</td>
+                <td class="${r.devolvida ? 'devolvida':'pendente'}">${r.devolvida ? 'Devolvida':'Pendente'}</td>
+                <td>${r.dataDevolucao || '-'}</td>
+            </tr>`;
+        }
+    });
+    document.getElementById("logPessoa").style.display = 'block';
+    document.getElementById("listaEmprestimos").style.display = 'none';
+}
+
+window.excluirEmprestimo = async function(id) {
+    if(confirm("Deseja realmente excluir este registro?")){
+        await deleteDoc(doc(db, "emprestimos", id));
+        listar();
+    }
+}
+
+window.exportarCSV = async function() {
+    const headers = ["Nº Ferramenta", "Data", "Entregue por", "Retirado por", "ID", "Status", "Data Devolução"];
+    const rows = [];
+    const snapshot = await getDocs(collection(db, "emprestimos"));
+    snapshot.forEach(docSnap => {
+        const e = docSnap.data();
+        rows.push([
+            e.numFerramenta, e.dataEmprestimo, e.quemEntregou.toUpperCase(),
+            e.nomePessoa, e.idPessoa, e.devolvida ? "Devolvida":"Pendente",
+            e.dataDevolucao || '-'
+        ]);
+    });
+    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
+    rows.forEach(r => { csvContent += r.join(",") + "\n"; });
+    const link = document.createElement("a");
+    link.href = encodeURI(csvContent);
+    link.download = "emprestimos_ferramentas.csv";
+    link.click();
+}
+
+// ======= REGISTRAR EMPRÉSTIMO =======
+document.getElementById("formEmprestimo").addEventListener("submit", async function(event){
     event.preventDefault();
-
     const numFerramenta = document.getElementById("numFerramenta").value;
-
-    const ferramentaExistente = emprestimos.some(e => e.numFerramenta === numFerramenta);
-    if (ferramentaExistente) {
-        alert("Esta ferramenta já foi registrada. Não é possível emprestar novamente.");
+    const snapshot = await getDocs(collection(db, "emprestimos"));
+    let duplicado = false;
+    snapshot.forEach(docSnap => {
+        const e = docSnap.data();
+        if(e.numFerramenta === numFerramenta && !e.devolvida) duplicado = true;
+    });
+    if(duplicado){
+        alert("Este equipamento já está emprestado. Não é possível registrar novamente.");
         return;
     }
-
-    const registro = {
-        numFerramenta: numFerramenta,
+    await addDoc(collection(db, "emprestimos"), {
+        numFerramenta,
         quemEntregou: document.getElementById("quemEntregou").value,
         nomePessoa: document.getElementById("nomePessoa").value,
         idPessoa: document.getElementById("idPessoa").value,
         dataEmprestimo: document.getElementById("dataEmprestimo").value,
         devolvida: false,
         dataDevolucao: null
-    };
-
-    emprestimos.push(registro);
-    salvar();
-    listar();
+    });
     this.reset();
+    listar();
 });
 
-// Marcar como devolvido
-function marcarDevolvido(index) {
-    emprestimos[index].devolvida = true;
-    emprestimos[index].dataDevolucao = new Date().toISOString().split("T")[0];
-    salvar();
-    listar();
-}
-
-// Excluir empréstimo
-function excluirEmprestimo(index) {
-    if (confirm("Tem certeza que deseja excluir este registro?")) {
-        emprestimos.splice(index, 1);
-        salvar();
-        listar();
-    }
-}
-
-// Log de ferramenta
-function verLogFerramenta(numFerramenta) {
-    const logFerramenta = emprestimos.filter(e => e.numFerramenta === numFerramenta);
-
-    document.getElementById("numFerramentaLog").textContent = numFerramenta;
-    const tbody = document.getElementById("logHistorico");
-    tbody.innerHTML = "";
-
-    logFerramenta.forEach((r) => {
-        tbody.innerHTML += `
-        <tr>
-            <td>${formatarData(r.dataEmprestimo)}</td>
-            <td>${r.nomePessoa}</td>
-            <td>${r.idPessoa}</td>
-            <td class="${r.devolvida ? 'devolvida' : 'pendente'}">
-                ${r.devolvida ? 'Devolvida' : 'Pendente'}
-            </td>
-            <td>${r.dataDevolucao ? formatarData(r.dataDevolucao) : "-"}</td>
-        </tr>`;
-    });
-
-    document.getElementById("logFerramenta").style.display = 'block';
-    document.getElementById("listaEmprestimos").style.display = 'none';
-}
-
-// Log de pessoa
-function verLogPessoa(nomePessoa) {
-    const logPessoa = emprestimos.filter(e => e.nomePessoa === nomePessoa);
-
-    document.getElementById("nomePessoaLog").textContent = nomePessoa;
-    const tbody = document.getElementById("logHistoricoPessoa");
-    tbody.innerHTML = "";
-
-    logPessoa.forEach((r) => {
-        tbody.innerHTML += `
-        <tr>
-            <td>${r.numFerramenta}</td>
-            <td>${formatarData(r.dataEmprestimo)}</td>
-            <td class="${r.devolvida ? 'devolvida' : 'pendente'}">
-                ${r.devolvida ? 'Devolvida' : 'Pendente'}
-            </td>
-            <td>${r.dataDevolucao ? formatarData(r.dataDevolucao) : "-"}</td>
-        </tr>`;
-    });
-
-    document.getElementById("logPessoa").style.display = 'block';
-    document.getElementById("listaEmprestimos").style.display = 'none';
-}
-
-// Exportar CSV
-function exportarCSV() {
-    const headers = ["Nº Ferramenta","Data","Entregue por","Retirado por","ID","Status","Data Devolução"];
-    const rows = emprestimos.map(e => [
-        e.numFerramenta,
-        formatarData(e.dataEmprestimo),
-        e.quemEntregou.toUpperCase(),
-        e.nomePessoa,
-        e.idPessoa,
-        e.devolvida ? "Devolvida" : "Pendente",
-        e.dataDevolucao ? formatarData(e.dataDevolucao) : "-"
-    ]);
-
-    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
-    rows.forEach(row => {
-        csvContent += row.join(",") + "\n";
-    });
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "emprestimos_ferramentas.csv");
-    document.body.appendChild(link);
-    link.click();
-}
-
-// Auto-complete nome pelo ID
-document.getElementById("idPessoa").addEventListener("input", function () {
-    const f = funcionarios.find(p => p.id === this.value);
+// Autocomplete pelo ID
+document.getElementById("idPessoa").addEventListener("input", function(){
+    const f = funcionarios.find(p=>p.id===this.value);
     document.getElementById("nomePessoa").value = f ? f.nome : "";
 });
 
-// Somente números no número da ferramenta
-document.getElementById("numFerramenta").addEventListener("input", function () {
-    this.value = this.value.replace(/\D/g, "");
+// NumFerramenta só números
+document.getElementById("numFerramenta").addEventListener("input", function(){
+    this.value = this.value.replace(/\D/g,"");
 });
 
-// Filtro em tempo real
+// Busca em tempo real
 document.getElementById("busca").addEventListener("input", listar);
 
 // Carregar lista ao abrir
