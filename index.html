@@ -13,6 +13,7 @@ th, td { padding: 8px; text-align: left; }
 .devolvida { color: green; font-weight: bold; }
 .pendente { color: red; font-weight: bold; }
 .excluir { color: red; font-weight: bold; cursor: pointer; }
+.equip-nome { font-size: 12px; color: #555; }
 </style>
 </head>
 <body>
@@ -21,6 +22,7 @@ th, td { padding: 8px; text-align: left; }
 
 <form id="formEmprestimo">
     <input type="text" id="numFerramenta" placeholder="Número da ferramenta" required>
+    <input type="text" id="nomeEquipamento" placeholder="Nome do equipamento" disabled>
     <input type="text" id="quemEntregou" placeholder="Entregue por (funcionário)" required>
     <input type="text" id="idPessoa" placeholder="ID da pessoa" required>
     <input type="text" id="nomePessoa" placeholder="Nome de quem pegou" required>
@@ -95,164 +97,248 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 window.funcionarios = [
-    { id: '123', nome: 'João Silva' },
-    { id: '456', nome: 'Maria Souza' },
-    { id: '789', nome: 'Carlos Oliveira' }
+    { id: '404', nome: 'Paulo Campos' },
+    { id: '123', nome: 'Sergio Ramos' },
+    { id: '789', nome: 'Carlos Oliveira' },  
+    { id: '101', nome: 'Pereira' },
+    { id: '102', nome: 'Rafael Costa' }    
 ];
 
-// ======= FUNÇÕES GLOBAIS =======
+window.equipamentos = [
+    { numero: "24000", nome: "Rebarbadora" },
+    { numero: "25000", nome: "Aparafusadora" },
+    { numero: "23000", nome: "Martelo" }, 
+    { numero: "26000", nome: "Serra Circular" },
+    { numero: "27000", nome: "Furadeira" }  
+];
+
+// ======== FUNÇÃO PARA FORMATAR DATAS ========
+function formatarData(dataStr) {
+    const d = new Date(dataStr);
+    if (!isNaN(d)) {
+        return ("0" + d.getDate()).slice(-2) + "/" +
+               ("0" + (d.getMonth() + 1)).slice(-2) + "/" +
+               d.getFullYear();
+    }
+    return dataStr;
+}
+
+// ===== LISTAR =====
 window.listar = async function() {
     const tbody = document.getElementById("listaEmprestimos");
     const filtro = document.getElementById("busca").value.toLowerCase();
     tbody.innerHTML = "";
 
     const snapshot = await getDocs(collection(db, "emprestimos"));
-    snapshot.forEach((docSnap, index) => {
+    snapshot.forEach((docSnap) => {
         const e = docSnap.data();
-        if(e.numFerramenta.toLowerCase().includes(filtro) ||
-           e.nomePessoa.toLowerCase().includes(filtro) ||
-           e.idPessoa.toLowerCase().includes(filtro)) {
 
+        if (
+            e.numFerramenta.toLowerCase().includes(filtro) ||
+            e.nomePessoa.toLowerCase().includes(filtro) ||
+            e.idPessoa.toLowerCase().includes(filtro)
+        ) {
             tbody.innerHTML += `
             <tr>
-                <td><a href="#" onclick="verLogFerramenta('${e.numFerramenta}')">${e.numFerramenta}</a></td>
-                <td>${e.dataEmprestimo}</td>
+                <td>
+                    <a href="#" onclick="verLogFerramenta('${e.numFerramenta}')">${e.numFerramenta}</a><br>
+                    <span class="equip-nome">${e.nomeEquipamento || ""}</span>
+                </td>
+                <td>${formatarData(e.dataEmprestimo)}</td>
                 <td>${e.quemEntregou.toUpperCase()}</td>
                 <td><a href="#" onclick="verLogPessoa('${e.nomePessoa}')">${e.nomePessoa}</a></td>
                 <td>${e.idPessoa}</td>
-                <td class="${e.devolvida ? 'devolvida' : 'pendente'}">${e.devolvida ? 'Devolvida' : 'Pendente'}</td>
-                <td>${e.dataDevolucao || '-'}</td>
+                <td class="${e.devolvida ? "devolvida" : "pendente"}">
+                    ${e.devolvida ? "Devolvida" : "Pendente"}
+                </td>
+                <td>${e.dataDevolucao || "-"}</td>
                 <td>
-                    ${!e.devolvida ? `<button onclick="marcarDevolvido('${docSnap.id}')">Devolver</button>` : ""}
+                    ${
+                      !e.devolvida
+                        ? `<button onclick="marcarDevolvido('${docSnap.id}')">Devolver</button>`
+                        : ""
+                    }
                     <span class="excluir" onclick="excluirEmprestimo('${docSnap.id}')">X</span>
                 </td>
             </tr>`;
         }
     });
-}
+};
 
+// ===== MARCAR COMO DEVOLVIDO =====
 window.marcarDevolvido = async function(id) {
     const docRef = doc(db, "emprestimos", id);
     await updateDoc(docRef, {
         devolvida: true,
-        dataDevolucao: new Date().toLocaleDateString('pt-BR')
+        dataDevolucao: new Date().toLocaleDateString("pt-BR"),
     });
     listar();
-}
+};
 
+// ===== LOG FERRAMENTA =====
 window.verLogFerramenta = async function(numFerramenta) {
     document.getElementById("numFerramentaLog").textContent = numFerramenta;
     const tbody = document.getElementById("logHistorico");
     tbody.innerHTML = "";
+
     const snapshot = await getDocs(collection(db, "emprestimos"));
-    snapshot.forEach(docSnap => {
+    snapshot.forEach((docSnap) => {
         const r = docSnap.data();
-        if(r.numFerramenta === numFerramenta){
-            tbody.innerHTML += `<tr>
-                <td>${r.dataEmprestimo}</td>
+        if (r.numFerramenta === numFerramenta) {
+            tbody.innerHTML += `
+            <tr>
+                <td>${formatarData(r.dataEmprestimo)}</td>
                 <td>${r.nomePessoa}</td>
                 <td>${r.idPessoa}</td>
-                <td class="${r.devolvida ? 'devolvida':'pendente'}">${r.devolvida ? 'Devolvida':'Pendente'}</td>
-                <td>${r.dataDevolucao || '-'}</td>
+                <td class="${r.devolvida ? "devolvida" : "pendente"}">
+                    ${r.devolvida ? "Devolvida" : "Pendente"}
+                </td>
+                <td>${r.dataDevolucao || "-"}</td>
             </tr>`;
         }
     });
-    document.getElementById("logFerramenta").style.display = 'block';
-    document.getElementById("listaEmprestimos").style.display = 'none';
-}
 
+    document.getElementById("logFerramenta").style.display = "block";
+    document.getElementById("listaEmprestimos").style.display = "none";
+};
+
+// ===== LOG PESSOA =====
 window.verLogPessoa = async function(nomePessoa) {
     document.getElementById("nomePessoaLog").textContent = nomePessoa;
     const tbody = document.getElementById("logHistoricoPessoa");
     tbody.innerHTML = "";
+
     const snapshot = await getDocs(collection(db, "emprestimos"));
-    snapshot.forEach(docSnap => {
+    snapshot.forEach((docSnap) => {
         const r = docSnap.data();
-        if(r.nomePessoa === nomePessoa){
-            tbody.innerHTML += `<tr>
-                <td>${r.numFerramenta}</td>
-                <td>${r.dataEmprestimo}</td>
-                <td class="${r.devolvida ? 'devolvida':'pendente'}">${r.devolvida ? 'Devolvida':'Pendente'}</td>
-                <td>${r.dataDevolucao || '-'}</td>
+        if (r.nomePessoa === nomePessoa) {
+            tbody.innerHTML += `
+            <tr>
+                <td>${r.numFerramenta} - ${r.nomeEquipamento || ""}</td>
+                <td>${formatarData(r.dataEmprestimo)}</td>
+                <td class="${r.devolvida ? "devolvida" : "pendente"}">
+                    ${r.devolvida ? "Devolvida" : "Pendente"}
+                </td>
+                <td>${r.dataDevolucao || "-"}</td>
             </tr>`;
         }
     });
-    document.getElementById("logPessoa").style.display = 'block';
-    document.getElementById("listaEmprestimos").style.display = 'none';
-}
 
+    document.getElementById("logPessoa").style.display = "block";
+    document.getElementById("listaEmprestimos").style.display = "none";
+};
+
+// ===== EXCLUIR =====
 window.excluirEmprestimo = async function(id) {
-    if(confirm("Deseja realmente excluir este registro?")){
+    if (confirm("Deseja realmente excluir este registro?")) {
         await deleteDoc(doc(db, "emprestimos", id));
         listar();
     }
-}
+};
 
+// ===== CSV =====
 window.exportarCSV = async function() {
-    const headers = ["Nº Ferramenta", "Data", "Entregue por", "Retirado por", "ID", "Status", "Data Devolução"];
+    const headers = [
+        "Nº Ferramenta",
+        "Nome Equipamento",
+        "Data",
+        "Entregue por",
+        "Retirado por",
+        "ID",
+        "Status",
+        "Data Devolução",
+    ];
+
     const rows = [];
     const snapshot = await getDocs(collection(db, "emprestimos"));
-    snapshot.forEach(docSnap => {
+
+    snapshot.forEach((docSnap) => {
         const e = docSnap.data();
         rows.push([
-            e.numFerramenta, e.dataEmprestimo, e.quemEntregou.toUpperCase(),
-            e.nomePessoa, e.idPessoa, e.devolvida ? "Devolvida":"Pendente",
-            e.dataDevolucao || '-'
+            e.numFerramenta,
+            e.nomeEquipamento || "",
+            formatarData(e.dataEmprestimo),
+            e.quemEntregou.toUpperCase(),
+            e.nomePessoa,
+            e.idPessoa,
+            e.devolvida ? "Devolvida" : "Pendente",
+            e.dataDevolucao || "-",
         ]);
     });
-    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
-    rows.forEach(r => { csvContent += r.join(",") + "\n"; });
+
+    let csvContent =
+        "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
+    rows.forEach((r) => {
+        csvContent += r.join(",") + "\n";
+    });
+
     const link = document.createElement("a");
     link.href = encodeURI(csvContent);
     link.download = "emprestimos_ferramentas.csv";
     link.click();
-}
+};
 
-// ======= REGISTRAR EMPRÉSTIMO =======
-document.getElementById("formEmprestimo").addEventListener("submit", async function(event){
+// ===== REGISTRAR =====
+document.getElementById("formEmprestimo").addEventListener("submit", async function(event) {
     event.preventDefault();
+
     const numFerramenta = document.getElementById("numFerramenta").value;
-    const snapshot = await getDocs(collection(db, "emprestimos"));
-    let duplicado = false;
-    snapshot.forEach(docSnap => {
-        const e = docSnap.data();
-        if(e.numFerramenta === numFerramenta && !e.devolvida) duplicado = true;
-    });
-    if(duplicado){
-        alert("Este equipamento já está emprestado. Não é possível registrar novamente.");
+    const equip = equipamentos.find((e) => e.numero === numFerramenta);
+
+    if (!equip) {
+        alert("Número de ferramenta não encontrado na lista cadastrada!");
         return;
     }
+
+    const snapshot = await getDocs(collection(db, "emprestimos"));
+    let duplicado = false;
+    snapshot.forEach((docSnap) => {
+        const e = docSnap.data();
+        if (e.numFerramenta === numFerramenta && !e.devolvida) {
+            duplicado = true;
+        }
+    });
+
+    if (duplicado) {
+        alert("Este equipamento já está emprestado.");
+        return;
+    }
+
     await addDoc(collection(db, "emprestimos"), {
         numFerramenta,
+        nomeEquipamento: equip.nome,
         quemEntregou: document.getElementById("quemEntregou").value,
         nomePessoa: document.getElementById("nomePessoa").value,
         idPessoa: document.getElementById("idPessoa").value,
         dataEmprestimo: document.getElementById("dataEmprestimo").value,
         devolvida: false,
-        dataDevolucao: null
+        dataDevolucao: null,
     });
+
     this.reset();
     listar();
 });
 
-// Autocomplete pelo ID
-document.getElementById("idPessoa").addEventListener("input", function(){
-    const f = funcionarios.find(p=>p.id===this.value);
+// ===== AUTOCOMPLETE \\ FUNCIONÁRIOS =====
+document.getElementById("idPessoa").addEventListener("input", function() {
+    const f = funcionarios.find((p) => p.id === this.value);
     document.getElementById("nomePessoa").value = f ? f.nome : "";
 });
 
-// NumFerramenta só números
-document.getElementById("numFerramenta").addEventListener("input", function(){
-    this.value = this.value.replace(/\D/g,"");
+// ===== AUTOCOMPLETE \\ EQUIPAMENTOS =====
+document.getElementById("numFerramenta").addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "");
+    const e = equipamentos.find((x) => x.numero === this.value);
+    document.getElementById("nomeEquipamento").value = e ? e.nome : "";
 });
 
-// Busca em tempo real
+// ===== BUSCA =====
 document.getElementById("busca").addEventListener("input", listar);
 
-// Carregar lista ao abrir
+// ===== INICIAR =====
 listar();
 </script>
 
+
 </body>
 </html>
-
