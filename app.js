@@ -1,13 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  getFirestore,
-  updateDoc,
-} from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, updateDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDR5LfYXB0KV63MDsiW_E5z8TemwlSfTGA",
@@ -18,8 +10,8 @@ const firebaseConfig = {
   appId: "1:588651522200:web:80b95c0c44b4edc95888ed",
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const db = getFirestore(initializeApp(firebaseConfig));
+const $ = (id) => document.getElementById(id);
 
 const state = {
   emprestimos: [],
@@ -27,130 +19,176 @@ const state = {
   funcionarios: [],
   sortBy: "dataEmprestimo",
   sortDirection: "desc",
-  currentPage: 1,
-  perPage: 10,
+  page: 1,
+  perPage: 8,
 };
 
-const $ = (id) => document.getElementById(id);
+let equipmentChart;
+let workerChart;
+
+const formatDateBR = (v) => (v ? new Date(`${v}T00:00:00`).toLocaleDateString("pt-BR") : "-");
+const normalize = (v = "") => v.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const nowTime = () => new Date().toTimeString().slice(0, 5);
 
 function showLoading(show) { $("loading").classList.toggle("hidden", !show); }
-function toast(message, type = "success") {
-  const el = document.createElement("div");
-  el.className = `toast ${type}`;
-  el.textContent = message;
-  $("toastContainer").appendChild(el);
-  setTimeout(() => el.remove(), 2600);
+
+function notify(message, type = "success") {
+  const toast = document.createElement("div");
+  toast.className = `toast toast--${type}`;
+  toast.textContent = message;
+  $("toastStack").appendChild(toast);
+  setTimeout(() => toast.remove(), 2800);
 }
 
-function formatDateBR(dateStr) {
-  if (!dateStr) return "-";
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
-}
-
-function getStatus(record) { return record.devolvida ? "devolvida" : "pendente"; }
-function normalizeText(text = "") { return text.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
-
-function openConfirm({ title, text, onConfirm }) {
+function confirmAction({ title, text, onConfirm }) {
   $("confirmTitle").textContent = title;
   $("confirmText").textContent = text;
   $("confirmModal").classList.remove("hidden");
 
-  const ok = () => {
+  const cancel = () => cleanup();
+  const proceed = () => {
     onConfirm?.();
     cleanup();
   };
-  const cancel = () => cleanup();
   const cleanup = () => {
     $("confirmModal").classList.add("hidden");
-    $("confirmOk").removeEventListener("click", ok);
     $("confirmCancel").removeEventListener("click", cancel);
+    $("confirmOk").removeEventListener("click", proceed);
   };
 
-  $("confirmOk").addEventListener("click", ok);
   $("confirmCancel").addEventListener("click", cancel);
+  $("confirmOk").addEventListener("click", proceed);
 }
 
-async function loadCollections() {
-  showLoading(true);
-  try {
-    const [empSnap, eqSnap, fnSnap] = await Promise.all([
-      getDocs(collection(db, "emprestimos")),
-      getDocs(collection(db, "equipamentos")),
-      getDocs(collection(db, "funcionarios")),
-    ]);
-
-    state.emprestimos = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    state.equipamentos = eqSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    state.funcionarios = fnSnap.docs.map((d) => ({ idDoc: d.id, ...d.data() }));
-
-    if (!state.equipamentos.length || !state.funcionarios.length) {
-      await seedIfNeeded();
-    }
-
-    renderAll();
-  } catch {
-    toast("Falha ao carregar dados do Firestore.", "error");
-  } finally {
-    showLoading(false);
-  }
+function isOverdue(record) {
+  if (record.devolvida) return false;
+  const base = new Date(`${record.dataEmprestimo}T${record.horaEmprestimo || "00:00"}:00`).getTime();
+  return (Date.now() - base) / 86400000 >= 2;
 }
 
-async function seedIfNeeded() {
-  const equipamentosSeed = [
-    { numero: "24000", nome: "Rebarbadora" },
-    { numero: "25000", nome: "Aparafusadora" },
-    { numero: "23000", nome: "Martelo" },
-    { numero: "26000", nome: "Serra Circular" },
-    { numero: "27000", nome: "Furadeira" },
-  ];
+function renderTable() {
+  const all = applyFiltersAndSort();
+  const maxPages = Math.max(1, Math.ceil(all.length / state.perPage));
+  state.page = Math.min(state.page, maxPages);
+  const start = (state.page - 1) * state.perPage;
+  const rows = all.slice(start, start + state.perPage);
 
-  const funcionariosSeed = [
-    { id: "404", nome: "Paulo Campos" },
-    { id: "123", nome: "Sergio Ramos" },
-    { id: "789", nome: "Carlos Oliveira" },
-    { id: "101", nome: "Pereira" },
-    { id: "102", nome: "Rafael Costa" },
-  ];
+  $("listaEmprestimos").innerHTML = rows.map((r) => `
+    <tr class="${isOverdue(r) ? "overdue" : ""}">
+      <td>${r.numFerramenta}<br><small>${r.nomeEquipamento || ""}</small></td>
+      <td>${formatDateBR(r.dataEmprestimo)} ${r.horaEmprestimo || ""}</td>
+      <td>${r.quemEntregou}</td>
+      <td>${r.nomePessoa}</td>
+      <td>${r.idPessoa}</td>
+      <td>
+        ${r.devolvida
+          ? '<span class="badge badge--done">✅ Devolvida</span>'
+          : '<span class="badge badge--pending">⛔ Pendente</span>'}
+      </td>
+      <td>${r.dataDevolucao ? `${formatDateBR(r.dataDevolucao)} ${r.horaDevolucao || ""}` : "-"}</td>
+      <td>
+        ${!r.devolvida ? `<button class="btn btn--primary js-return" data-id="${r.docId}">Devolver</button>` : ""}
+        <button class="btn btn--danger js-delete" data-id="${r.docId}">Excluir</button>
+      </td>
+    </tr>`).join("");
 
-  if (!state.equipamentos.length) {
-    await Promise.all(equipamentosSeed.map((item) => addDoc(collection(db, "equipamentos"), item)));
-  }
-  if (!state.funcionarios.length) {
-    await Promise.all(funcionariosSeed.map((item) => addDoc(collection(db, "funcionarios"), item)));
-  }
-
-  const [eqSnap, fnSnap] = await Promise.all([
-    getDocs(collection(db, "equipamentos")),
-    getDocs(collection(db, "funcionarios")),
-  ]);
-  state.equipamentos = eqSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  state.funcionarios = fnSnap.docs.map((d) => ({ idDoc: d.id, ...d.data() }));
+  $("pageInfo").textContent = `Página ${state.page} de ${maxPages}`;
 }
 
-function getFilteredData() {
-  const busca = normalizeText($("busca").value.trim());
+function renderRegisters() {
+  $("listaEquipamentos").innerHTML = state.equipamentos.map((e) => `<li><strong>${e.numero}</strong> — ${e.nome}</li>`).join("");
+  $("listaFuncionarios").innerHTML = state.funcionarios.map((f) => `<li><strong>${f.id}</strong> — ${f.nome}</li>`).join("");
+
+  $("equipamentosList").innerHTML = state.equipamentos.map((e) => `<option value="${e.numero}">${e.nome}</option>`).join("");
+  $("funcionariosList").innerHTML = state.funcionarios.map((f) => `<option value="${f.id}">${f.nome}</option>`).join("");
+  $("funcionariosNomeList").innerHTML = state.funcionarios.map((f) => `<option value="${f.nome}">${f.id}</option>`).join("");
+
+  $("filtroFuncionario").innerHTML = `<option value="">Todos funcionários</option>${state.funcionarios.map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`).join("")}`;
+  $("historicoEquipamento").innerHTML = `<option value="">Selecione equipamento</option>${state.equipamentos.map((e) => `<option value="${e.numero}">${e.numero} - ${e.nome}</option>`).join("")}`;
+  $("historicoFuncionario").innerHTML = `<option value="">Selecione funcionário</option>${state.funcionarios.map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`).join("")}`;
+}
+
+function renderKpis() {
+  const pendentes = state.emprestimos.filter((e) => !e.devolvida).length;
+  const devolvidosHoje = state.emprestimos.filter((e) => e.devolvida && e.dataDevolucao === todayISO()).length;
+  const atrasados = state.emprestimos.filter((e) => isOverdue(e)).length;
+
+  $("kpiTotalEquip").textContent = state.equipamentos.length;
+  $("kpiPendentes").textContent = pendentes;
+  $("kpiDevolvidosHoje").textContent = devolvidosHoje;
+  $("kpiAtrasados").textContent = atrasados;
+}
+
+function renderHistory() {
+  const eq = $("historicoEquipamento").value;
+  const fn = $("historicoFuncionario").value;
+
+  const byEq = state.emprestimos
+    .filter((e) => !eq || e.numFerramenta === eq)
+    .map((e) => `<tr><td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td><td>${e.nomePessoa}</td><td>${e.devolvida ? "Devolvida" : "Pendente"}</td></tr>`)
+    .join("");
+
+  const byFn = state.emprestimos
+    .filter((e) => !fn || e.idPessoa === fn)
+    .map((e) => `<tr><td>${e.numFerramenta} - ${e.nomeEquipamento || ""}</td><td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td><td>${e.devolvida ? "Devolvida" : "Pendente"}</td></tr>`)
+    .join("");
+
+  $("historicoEquipamentoBody").innerHTML = byEq;
+  $("historicoFuncionarioBody").innerHTML = byFn;
+}
+
+function renderCharts() {
+  const eqMap = {};
+  const fnMap = {};
+  state.emprestimos.forEach((e) => {
+    eqMap[e.numFerramenta] = (eqMap[e.numFerramenta] || 0) + 1;
+    fnMap[e.idPessoa] = (fnMap[e.idPessoa] || 0) + 1;
+  });
+
+  const eqLabels = Object.keys(eqMap).slice(0, 8);
+  const eqData = eqLabels.map((k) => eqMap[k]);
+  const fnLabels = Object.keys(fnMap).slice(0, 8);
+  const fnData = fnLabels.map((k) => fnMap[k]);
+
+  equipmentChart?.destroy();
+  workerChart?.destroy();
+
+  equipmentChart = new Chart($("chartEquipamentos"), {
+    type: "bar",
+    data: { labels: eqLabels, datasets: [{ label: "Quantidade", data: eqData, backgroundColor: "#2563eb" }] },
+    options: { plugins: { legend: { display: false } }, responsive: true },
+  });
+
+  workerChart = new Chart($("chartFuncionarios"), {
+    type: "doughnut",
+    data: { labels: fnLabels, datasets: [{ data: fnData }] },
+    options: { responsive: true },
+  });
+}
+
+function applyFiltersAndSort() {
+  const q = normalize($("busca").value.trim());
   const status = $("filtroStatus").value;
-  const funcionario = $("filtroFuncionario").value;
-  const inicio = $("filtroDataInicio").value;
-  const fim = $("filtroDataFim").value;
+  const func = $("filtroFuncionario").value;
+  const start = $("filtroDataInicio").value;
+  const end = $("filtroDataFim").value;
 
   return state.emprestimos
     .filter((e) => {
-      const textTarget = normalizeText(`${e.numFerramenta} ${e.nomePessoa} ${e.idPessoa} ${e.nomeEquipamento || ""}`);
-      const bySearch = !busca || textTarget.includes(busca);
+      const target = normalize(`${e.numFerramenta} ${e.nomeEquipamento || ""} ${e.nomePessoa} ${e.idPessoa}`);
+      const byQ = !q || target.includes(q);
       const byStatus = status === "todos" || (status === "devolvida" ? e.devolvida : !e.devolvida);
-      const byFuncionario = !funcionario || e.idPessoa === funcionario;
-      const byInicio = !inicio || e.dataEmprestimo >= inicio;
-      const byFim = !fim || e.dataEmprestimo <= fim;
-      return bySearch && byStatus && byFuncionario && byInicio && byFim;
+      const byFunc = !func || e.idPessoa === func;
+      const byStart = !start || e.dataEmprestimo >= start;
+      const byEnd = !end || e.dataEmprestimo <= end;
+      return byQ && byStatus && byFunc && byStart && byEnd;
     })
     .sort((a, b) => {
       const key = state.sortBy;
       const dir = state.sortDirection === "asc" ? 1 : -1;
-      let av = a[key] ?? "";
-      let bv = b[key] ?? "";
+      let av = a[key] || "";
+      let bv = b[key] || "";
       if (key === "status") {
         av = a.devolvida ? 1 : 0;
         bv = b.devolvida ? 1 : 0;
@@ -159,217 +197,131 @@ function getFilteredData() {
     });
 }
 
-function renderEmprestimos() {
-  const data = getFilteredData();
-  const totalPages = Math.max(1, Math.ceil(data.length / state.perPage));
-  state.currentPage = Math.min(state.currentPage, totalPages);
-  const start = (state.currentPage - 1) * state.perPage;
-  const current = data.slice(start, start + state.perPage);
+async function fetchAll() {
+  showLoading(true);
+  try {
+    const [emprestimos, equipamentos, funcionarios] = await Promise.all([
+      getDocs(collection(db, "emprestimos")),
+      getDocs(collection(db, "equipamentos")),
+      getDocs(collection(db, "funcionarios")),
+    ]);
 
-  $("listaEmprestimos").innerHTML = current
-    .map((e) => {
-      const isOverdue = !e.devolvida && ((Date.now() - new Date(`${e.dataEmprestimo}T${e.horaEmprestimo || "00:00"}:00`).getTime()) / 86400000) >= 2;
-      return `
-      <tr class="${isOverdue ? "overdue" : ""}">
-        <td>${e.numFerramenta}<br><small>${e.nomeEquipamento || ""}</small></td>
-        <td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td>
-        <td>${e.quemEntregou || "-"}</td>
-        <td>${e.nomePessoa}</td>
-        <td>${e.idPessoa}</td>
-        <td><span class="status ${getStatus(e)}">${e.devolvida ? "✅ Devolvida" : "⛔ Pendente"}</span></td>
-        <td>${e.dataDevolucao ? `${formatDateBR(e.dataDevolucao)} ${e.horaDevolucao || ""}` : "-"}</td>
-        <td>
-          ${!e.devolvida ? `<button class="btn btn--primary action-devolver" data-id="${e.id}">Devolver</button>` : ""}
-          <button class="btn btn--danger action-excluir" data-id="${e.id}">Excluir</button>
-        </td>
-      </tr>`;
-    })
-    .join("");
+    state.emprestimos = emprestimos.docs.map((d) => ({ docId: d.id, ...d.data() }));
+    state.equipamentos = equipamentos.docs.map((d) => ({ docId: d.id, ...d.data() }));
+    state.funcionarios = funcionarios.docs.map((d) => ({ docId: d.id, ...d.data() }));
 
-  $("pageInfo").textContent = `Página ${state.currentPage} de ${totalPages}`;
-}
+    if (!state.equipamentos.length || !state.funcionarios.length) {
+      await seed();
+      return fetchAll();
+    }
 
-function renderCadastros() {
-  $("listaEquipamentos").innerHTML = state.equipamentos.map((e) => `<li><strong>${e.numero}</strong> — ${e.nome}</li>`).join("");
-  $("listaFuncionarios").innerHTML = state.funcionarios.map((f) => `<li><strong>${f.id}</strong> — ${f.nome}</li>`).join("");
-
-  $("equipamentosList").innerHTML = state.equipamentos.map((e) => `<option value="${e.numero}">${e.nome}</option>`).join("");
-  $("funcionariosList").innerHTML = state.funcionarios.map((f) => `<option value="${f.id}">${f.nome}</option>`).join("");
-  $("funcionariosNomeList").innerHTML = state.funcionarios.map((f) => `<option value="${f.nome}">${f.id}</option>`).join("");
-
-  $("filtroFuncionario").innerHTML = `<option value="">Funcionário: Todos</option>${state.funcionarios.map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`).join("")}`;
-  $("historicoEquipamento").innerHTML = `<option value="">Selecione equipamento</option>${state.equipamentos.map((e) => `<option value="${e.numero}">${e.numero} - ${e.nome}</option>`).join("")}`;
-  $("historicoFuncionario").innerHTML = `<option value="">Selecione funcionário</option>${state.funcionarios.map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`).join("")}`;
-}
-
-function renderKpis() {
-  const today = new Date().toISOString().slice(0, 10);
-  $("kpiTotalEquip").textContent = state.equipamentos.length;
-  $("kpiPendentes").textContent = state.emprestimos.filter((e) => !e.devolvida).length;
-  $("kpiDevolvidosHoje").textContent = state.emprestimos.filter((e) => e.devolvida && e.dataDevolucao === today).length;
-}
-
-let chartEquip;
-let chartFunc;
-function renderCharts() {
-  const countByEq = {};
-  const countByFunc = {};
-
-  state.emprestimos.forEach((e) => {
-    countByEq[e.numFerramenta] = (countByEq[e.numFerramenta] || 0) + 1;
-    countByFunc[e.idPessoa] = (countByFunc[e.idPessoa] || 0) + 1;
-  });
-
-  const eqLabels = Object.keys(countByEq).slice(0, 10);
-  const eqData = eqLabels.map((k) => countByEq[k]);
-  const fnLabels = Object.keys(countByFunc).slice(0, 10);
-  const fnData = fnLabels.map((k) => countByFunc[k]);
-
-  chartEquip?.destroy();
-  chartFunc?.destroy();
-
-  chartEquip = new Chart($("chartEquipamentos"), {
-    type: "bar",
-    data: { labels: eqLabels, datasets: [{ label: "Usos", data: eqData }] },
-    options: { responsive: true },
-  });
-
-  chartFunc = new Chart($("chartFuncionarios"), {
-    type: "bar",
-    data: { labels: fnLabels, datasets: [{ label: "Retiradas", data: fnData }] },
-    options: { responsive: true },
-  });
-}
-
-function renderHistoricoEquipamento() {
-  const num = $("historicoEquipamento").value;
-  const rows = state.emprestimos
-    .filter((e) => !num || e.numFerramenta === num)
-    .map((e) => `<tr><td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td><td>${e.nomePessoa}</td><td>${e.devolvida ? "Devolvida" : "Pendente"}</td></tr>`)
-    .join("");
-  $("historicoEquipamentoBody").innerHTML = rows;
-}
-
-function renderHistoricoFuncionario() {
-  const id = $("historicoFuncionario").value;
-  const rows = state.emprestimos
-    .filter((e) => !id || e.idPessoa === id)
-    .map((e) => `<tr><td>${e.numFerramenta} - ${e.nomeEquipamento || ""}</td><td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td><td>${e.devolvida ? "Devolvida" : "Pendente"}</td></tr>`)
-    .join("");
-  $("historicoFuncionarioBody").innerHTML = rows;
-}
-
-function renderAll() {
-  renderCadastros();
-  renderEmprestimos();
-  renderKpis();
-  renderCharts();
-  renderHistoricoEquipamento();
-  renderHistoricoFuncionario();
-}
-
-async function registrarEmprestimo(event) {
-  event.preventDefault();
-  const numFerramenta = $("numFerramenta").value.replace(/\D/g, "");
-  const nomeEquipamento = $("nomeEquipamento").value.trim();
-  const quemEntregou = $("quemEntregou").value.trim();
-  const idPessoa = $("idPessoa").value.trim();
-  const nomePessoa = $("nomePessoa").value.trim();
-  const dataEmprestimo = $("dataEmprestimo").value;
-  const horaEmprestimo = $("horaEmprestimo").value;
-
-  if (!numFerramenta || !nomeEquipamento || !quemEntregou || !idPessoa || !nomePessoa || !dataEmprestimo || !horaEmprestimo) {
-    return toast("Preencha todos os campos obrigatórios.", "error");
+    renderRegisters();
+    renderKpis();
+    renderTable();
+    renderHistory();
+    renderCharts();
+  } catch {
+    notify("Erro ao carregar dados do Firestore.", "error");
+  } finally {
+    showLoading(false);
   }
+}
 
-  const equip = state.equipamentos.find((e) => e.numero === numFerramenta);
-  if (!equip) return toast("Equipamento não cadastrado.", "error");
+async function seed() {
+  const equipamentos = [
+    { numero: "24000", nome: "Rebarbadora" },
+    { numero: "25000", nome: "Aparafusadora" },
+    { numero: "23000", nome: "Martelo" },
+    { numero: "26000", nome: "Serra Circular" },
+    { numero: "27000", nome: "Furadeira" },
+  ];
+  const funcionarios = [
+    { id: "404", nome: "Paulo Campos" },
+    { id: "123", nome: "Sergio Ramos" },
+    { id: "789", nome: "Carlos Oliveira" },
+    { id: "101", nome: "Pereira" },
+    { id: "102", nome: "Rafael Costa" },
+  ];
 
-  const duplicado = state.emprestimos.some((e) => e.numFerramenta === numFerramenta && !e.devolvida);
-  if (duplicado) return toast("Este equipamento já está emprestado.", "error");
+  if (!state.equipamentos.length) await Promise.all(equipamentos.map((e) => addDoc(collection(db, "equipamentos"), e)));
+  if (!state.funcionarios.length) await Promise.all(funcionarios.map((f) => addDoc(collection(db, "funcionarios"), f)));
+}
 
-  await addDoc(collection(db, "emprestimos"), {
-    numFerramenta,
-    nomeEquipamento,
-    quemEntregou,
-    idPessoa,
-    nomePessoa,
-    dataEmprestimo,
-    horaEmprestimo,
+async function createLoan(event) {
+  event.preventDefault();
+
+  const payload = {
+    numFerramenta: $("numFerramenta").value.replace(/\D/g, ""),
+    nomeEquipamento: $("nomeEquipamento").value.trim(),
+    quemEntregou: $("quemEntregou").value.trim(),
+    idPessoa: $("idPessoa").value.trim(),
+    nomePessoa: $("nomePessoa").value.trim(),
+    dataEmprestimo: $("dataEmprestimo").value,
+    horaEmprestimo: $("horaEmprestimo").value,
     devolvida: false,
     dataDevolucao: null,
     horaDevolucao: null,
     createdAt: new Date().toISOString(),
-  });
+  };
 
-  toast("Empréstimo registrado com sucesso.");
+  if (Object.values(payload).some((v) => v === "")) return notify("Preencha todos os campos obrigatórios.", "error");
+  if (!state.equipamentos.some((e) => e.numero === payload.numFerramenta)) return notify("Equipamento não cadastrado.", "error");
+  if (state.emprestimos.some((e) => e.numFerramenta === payload.numFerramenta && !e.devolvida)) return notify("Equipamento já está emprestado.", "error");
+
+  await addDoc(collection(db, "emprestimos"), payload);
   event.target.reset();
-  await loadCollections();
+  $("dataEmprestimo").value = todayISO();
+  $("horaEmprestimo").value = nowTime();
+  notify("Empréstimo registrado com sucesso.");
+  fetchAll();
 }
 
-async function devolverEmprestimo(id) {
+async function markAsReturned(docId) {
   const now = new Date();
-  await updateDoc(doc(db, "emprestimos", id), {
+  await updateDoc(doc(db, "emprestimos", docId), {
     devolvida: true,
     dataDevolucao: now.toISOString().slice(0, 10),
     horaDevolucao: now.toTimeString().slice(0, 5),
   });
-  toast("Equipamento devolvido.");
-  await loadCollections();
+  notify("Devolução registrada.");
+  fetchAll();
 }
 
-async function excluirEmprestimo(id) {
-  await deleteDoc(doc(db, "emprestimos", id));
-  toast("Registro excluído.");
-  await loadCollections();
+async function removeLoan(docId) {
+  await deleteDoc(doc(db, "emprestimos", docId));
+  notify("Registro removido.");
+  fetchAll();
 }
 
-async function salvarEquipamento(event) {
+async function createEquipment(event) {
   event.preventDefault();
   const numero = $("equipNumero").value.replace(/\D/g, "");
   const nome = $("equipNome").value.trim();
-  if (!numero || !nome) return toast("Informe número e nome do equipamento.", "error");
-  if (state.equipamentos.some((e) => e.numero === numero)) return toast("Número já cadastrado.", "error");
+  if (!numero || !nome) return notify("Informe número e nome.", "error");
+  if (state.equipamentos.some((e) => e.numero === numero)) return notify("Número já cadastrado.", "error");
+
   await addDoc(collection(db, "equipamentos"), { numero, nome });
   event.target.reset();
-  toast("Equipamento cadastrado com sucesso.");
-  await loadCollections();
+  notify("Equipamento salvo.");
+  fetchAll();
 }
 
-async function salvarFuncionario(event) {
+async function createWorker(event) {
   event.preventDefault();
   const id = $("funcId").value.trim();
   const nome = $("funcNome").value.trim();
-  if (!id || !nome) return toast("Informe ID e nome do funcionário.", "error");
-  if (state.funcionarios.some((f) => f.id === id)) return toast("ID já cadastrado.", "error");
+  if (!id || !nome) return notify("Informe ID e nome.", "error");
+  if (state.funcionarios.some((f) => f.id === id)) return notify("ID já cadastrado.", "error");
+
   await addDoc(collection(db, "funcionarios"), { id, nome });
   event.target.reset();
-  toast("Funcionário cadastrado com sucesso.");
-  await loadCollections();
-}
-
-function hydrateAutoComplete() {
-  $("numFerramenta").addEventListener("input", () => {
-    $("numFerramenta").value = $("numFerramenta").value.replace(/\D/g, "");
-    const equip = state.equipamentos.find((e) => e.numero === $("numFerramenta").value);
-    $("nomeEquipamento").value = equip?.nome || "";
-  });
-
-  $("idPessoa").addEventListener("input", () => {
-    const func = state.funcionarios.find((f) => f.id === $("idPessoa").value.trim());
-    if (func) $("nomePessoa").value = func.nome;
-  });
-
-  $("nomePessoa").addEventListener("input", () => {
-    const func = state.funcionarios.find((f) => normalizeText(f.nome) === normalizeText($("nomePessoa").value.trim()));
-    if (func) $("idPessoa").value = func.id;
-  });
+  notify("Funcionário salvo.");
+  fetchAll();
 }
 
 function exportCsv() {
-  const rows = getFilteredData();
-  const headers = ["Nº Equipamento", "Nome Equipamento", "Data", "Hora", "Entregue por", "Retirado por", "ID", "Status", "Data Devolução", "Hora Devolução"];
-  const dataRows = rows.map((e) => [
+  const headers = ["Equipamento", "Nome", "Data", "Hora", "Entregue por", "Funcionário", "ID", "Status", "Data devolução", "Hora devolução"];
+  const rows = applyFiltersAndSort().map((e) => [
     e.numFerramenta,
     e.nomeEquipamento || "",
     formatDateBR(e.dataEmprestimo),
@@ -382,110 +334,113 @@ function exportCsv() {
     e.horaDevolucao || "-",
   ]);
 
-  const csv = [headers, ...dataRows]
-    .map((line) => line.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(";"))
-    .join("\n");
-
+  const csv = [headers, ...rows].map((line) => line.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(";")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `emprestimos_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `emprestimos_filtrados_${todayISO()}.csv`;
   link.click();
 }
 
-function bindEvents() {
-  document.querySelectorAll(".menu__item").forEach((btn) => {
+function bindUI() {
+  document.querySelectorAll(".nav__btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".menu__item").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".nav__btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
       btn.classList.add("active");
-      document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
-      const view = btn.dataset.view;
-      $(`view-${view}`).classList.add("active");
-      $("pageTitle").textContent = btn.textContent;
+      $(`view-${btn.dataset.view}`).classList.add("active");
+      $("pageTitle").textContent = btn.textContent.replace(/[📊🧾🗂📚]\s*/, "");
     });
   });
 
+  $("formEmprestimo").addEventListener("submit", createLoan);
+  $("formEquipamento").addEventListener("submit", createEquipment);
+  $("formFuncionario").addEventListener("submit", createWorker);
+
+  $("numFerramenta").addEventListener("input", () => {
+    $("numFerramenta").value = $("numFerramenta").value.replace(/\D/g, "");
+    const e = state.equipamentos.find((item) => item.numero === $("numFerramenta").value);
+    $("nomeEquipamento").value = e?.nome || "";
+  });
+
+  $("idPessoa").addEventListener("input", () => {
+    const f = state.funcionarios.find((item) => item.id === $("idPessoa").value.trim());
+    if (f) $("nomePessoa").value = f.nome;
+  });
+
+  $("nomePessoa").addEventListener("input", () => {
+    const f = state.funcionarios.find((item) => normalize(item.nome) === normalize($("nomePessoa").value.trim()));
+    if (f) $("idPessoa").value = f.id;
+  });
+
   ["busca", "filtroStatus", "filtroFuncionario", "filtroDataInicio", "filtroDataFim"].forEach((id) => {
-    $(id).addEventListener("input", () => {
-      state.currentPage = 1;
-      renderEmprestimos();
-    });
-    $(id).addEventListener("change", () => {
-      state.currentPage = 1;
-      renderEmprestimos();
-    });
+    $(id).addEventListener("input", () => { state.page = 1; renderTable(); });
+    $(id).addEventListener("change", () => { state.page = 1; renderTable(); });
   });
 
   $("limparFiltros").addEventListener("click", () => {
     ["busca", "filtroDataInicio", "filtroDataFim"].forEach((id) => ($(id).value = ""));
     $("filtroStatus").value = "todos";
     $("filtroFuncionario").value = "";
-    state.currentPage = 1;
-    renderEmprestimos();
+    state.page = 1;
+    renderTable();
   });
 
-  document.querySelector("thead").addEventListener("click", (event) => {
+  document.querySelector("#view-emprestimos thead").addEventListener("click", (event) => {
     const th = event.target.closest("th[data-sort]");
     if (!th) return;
-    const key = th.dataset.sort;
-    state.sortDirection = state.sortBy === key && state.sortDirection === "asc" ? "desc" : "asc";
-    state.sortBy = key;
-    renderEmprestimos();
+    state.sortDirection = state.sortBy === th.dataset.sort && state.sortDirection === "asc" ? "desc" : "asc";
+    state.sortBy = th.dataset.sort;
+    renderTable();
   });
 
   $("listaEmprestimos").addEventListener("click", (event) => {
-    const devolverBtn = event.target.closest(".action-devolver");
-    const excluirBtn = event.target.closest(".action-excluir");
+    const btnReturn = event.target.closest(".js-return");
+    const btnDelete = event.target.closest(".js-delete");
 
-    if (devolverBtn) {
-      const id = devolverBtn.dataset.id;
-      openConfirm({
+    if (btnReturn) {
+      confirmAction({
         title: "Confirmar devolução",
-        text: "Deseja marcar este equipamento como devolvido?",
-        onConfirm: () => devolverEmprestimo(id),
+        text: "Deseja registrar a devolução deste equipamento?",
+        onConfirm: () => markAsReturned(btnReturn.dataset.id),
       });
     }
-
-    if (excluirBtn) {
-      const id = excluirBtn.dataset.id;
-      openConfirm({
-        title: "Excluir registro",
-        text: "Esta ação não pode ser desfeita. Deseja continuar?",
-        onConfirm: () => excluirEmprestimo(id),
+    if (btnDelete) {
+      confirmAction({
+        title: "Excluir empréstimo",
+        text: "Esta ação é permanente. Deseja continuar?",
+        onConfirm: () => removeLoan(btnDelete.dataset.id),
       });
     }
   });
 
   $("prevPage").addEventListener("click", () => {
-    state.currentPage = Math.max(1, state.currentPage - 1);
-    renderEmprestimos();
+    state.page = Math.max(1, state.page - 1);
+    renderTable();
   });
   $("nextPage").addEventListener("click", () => {
-    const totalPages = Math.max(1, Math.ceil(getFilteredData().length / state.perPage));
-    state.currentPage = Math.min(totalPages, state.currentPage + 1);
-    renderEmprestimos();
+    const max = Math.max(1, Math.ceil(applyFiltersAndSort().length / state.perPage));
+    state.page = Math.min(max, state.page + 1);
+    renderTable();
   });
 
-  $("formEmprestimo").addEventListener("submit", registrarEmprestimo);
-  $("formEquipamento").addEventListener("submit", salvarEquipamento);
-  $("formFuncionario").addEventListener("submit", salvarFuncionario);
-  $("historicoEquipamento").addEventListener("change", renderHistoricoEquipamento);
-  $("historicoFuncionario").addEventListener("change", renderHistoricoFuncionario);
+  $("historicoEquipamento").addEventListener("change", renderHistory);
+  $("historicoFuncionario").addEventListener("change", renderHistory);
   $("exportCsvBtn").addEventListener("click", exportCsv);
 
   $("themeToggle").addEventListener("click", () => {
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    document.documentElement.setAttribute("data-theme", isDark ? "light" : "dark");
-    localStorage.setItem("theme", isDark ? "light" : "dark");
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
   });
 }
 
-function loadTheme() {
-  const theme = localStorage.getItem("theme") || "light";
-  document.documentElement.setAttribute("data-theme", theme);
+function initDefaults() {
+  document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || "light");
+  $("dataEmprestimo").value = todayISO();
+  $("horaEmprestimo").value = nowTime();
 }
 
-loadTheme();
-bindEvents();
-hydrateAutoComplete();
-loadCollections();
+initDefaults();
+bindUI();
+fetchAll();
