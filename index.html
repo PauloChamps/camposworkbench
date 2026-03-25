@@ -1,344 +1,194 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-BR" data-theme="light">
 <head>
-<meta charset="UTF-8">
-<title>Gestão de Ferramentas</title>
-<style>
-body { font-family: Arial; margin: 20px; }
-input, select { padding:5px; margin:5px; }
-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-table, th, td { border: 1px solid #aaa; }
-th, td { padding: 8px; text-align: left; }
-.btn { padding: 6px 12px; cursor: pointer; }
-.devolvida { color: green; font-weight: bold; }
-.pendente { color: red; font-weight: bold; }
-.excluir { color: red; font-weight: bold; cursor: pointer; }
-.equip-nome { font-size: 12px; color: #555; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workbench Pro • Empréstimos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="layout">
+    <aside class="side">
+      <div class="logo-wrap">
+        <div class="logo">CW</div>
+        <div>
+          <h1>Workbench Pro</h1>
+          <p>Armazém • Ferramentas</p>
+        </div>
+      </div>
 
-<h2>Empréstimo de Ferramentas</h2>
+      <nav class="nav" id="appNav">
+        <button class="nav__btn active" data-view="dashboard">📊 Dashboard</button>
+        <button class="nav__btn" data-view="emprestimos">🧾 Empréstimos</button>
+        <button class="nav__btn" data-view="cadastros">🗂 Cadastros</button>
+        <button class="nav__btn" data-view="historico">📚 Histórico</button>
+      </nav>
 
-<form id="formEmprestimo">
-    <input type="text" id="numFerramenta" placeholder="Número da ferramenta" required>
-    <input type="text" id="nomeEquipamento" placeholder="Nome do equipamento" disabled>
-    <input type="text" id="quemEntregou" placeholder="Entregue por (funcionário)" required>
-    <input type="text" id="idPessoa" placeholder="ID da pessoa" required>
-    <input type="text" id="nomePessoa" placeholder="Nome de quem pegou" required>
-    <input type="date" id="dataEmprestimo" required>
-    <button class="btn" type="submit">Registrar</button>
-</form>
+      <div class="side__bottom">
+        <button id="themeToggle" class="btn btn--outline">Alternar Tema</button>
+      </div>
+    </aside>
 
-<h2>Ferramentas em circulação</h2>
-<input type="text" id="busca" placeholder="Buscar por ferramenta, pessoa ou ID...">
+    <main class="main">
+      <header class="header">
+        <div>
+          <h2 id="pageTitle">Dashboard</h2>
+          <p class="muted">Versão moderna com Firestore, filtros avançados e análises.</p>
+        </div>
+        <div class="header__actions">
+          <button id="exportCsvBtn" class="btn btn--primary">Exportar CSV filtrado</button>
+        </div>
+      </header>
 
-<table>
-<thead>
-<tr>
-    <th>Nº Ferramenta</th>
-    <th>Data</th>
-    <th>Entregue por</th>
-    <th>Retirado por</th>
-    <th>ID</th>
-    <th>Status</th>
-    <th>Data Devolução</th>
-    <th>Ações</th>
-</tr>
-</thead>
-<tbody id="listaEmprestimos"></tbody>
-</table>
+      <section id="view-dashboard" class="view active">
+        <div class="kpis">
+          <article class="kpi"><span>Total equipamentos</span><strong id="kpiTotalEquip">0</strong></article>
+          <article class="kpi kpi--danger"><span>Em uso</span><strong id="kpiPendentes">0</strong></article>
+          <article class="kpi kpi--success"><span>Devolvidos hoje</span><strong id="kpiDevolvidosHoje">0</strong></article>
+          <article class="kpi kpi--warning"><span>Atrasados (+2 dias)</span><strong id="kpiAtrasados">0</strong></article>
+        </div>
 
-<!-- Logs -->
-<div id="logFerramenta" style="display:none;">
-<h3>Histórico de Empréstimos</h3>
-<a href="index.html">Voltar</a>
-<h4>Ferramenta: <span id="numFerramentaLog"></span></h4>
-<table>
-<thead>
-<tr>
-<th>Data</th><th>Quem retirou</th><th>ID</th><th>Status</th><th>Data Devolução</th>
-</tr>
-</thead>
-<tbody id="logHistorico"></tbody>
-</table>
-</div>
+        <div class="grid-2">
+          <section class="card">
+            <h3>Equipamentos mais utilizados</h3>
+            <canvas id="chartEquipamentos"></canvas>
+          </section>
+          <section class="card">
+            <h3>Funcionários que mais retiram</h3>
+            <canvas id="chartFuncionarios"></canvas>
+          </section>
+        </div>
+      </section>
 
-<div id="logPessoa" style="display:none;">
-<h3>Histórico de Empréstimos</h3>
-<a href="index.html">Voltar</a>
-<h4>Histórico de: <span id="nomePessoaLog"></span></h4>
-<table>
-<thead>
-<tr>
-<th>Ferramenta</th><th>Data</th><th>Status</th><th>Data Devolução</th>
-</tr>
-</thead>
-<tbody id="logHistoricoPessoa"></tbody>
-</table>
-</div>
+      <section id="view-emprestimos" class="view">
+        <section class="card">
+          <h3>Novo empréstimo</h3>
+          <form id="formEmprestimo" class="form form--loan">
+            <label>Nº equipamento<input type="text" id="numFerramenta" list="equipamentosList" placeholder="Ex: 24000" required /></label>
+            <label>Nome equipamento<input type="text" id="nomeEquipamento" disabled placeholder="Preenchido automaticamente" /></label>
+            <label>Entregue por<input type="text" id="quemEntregou" required maxlength="80" /></label>
+            <label>ID funcionário<input type="text" id="idPessoa" list="funcionariosList" required maxlength="20" /></label>
+            <label>Nome funcionário<input type="text" id="nomePessoa" list="funcionariosNomeList" required maxlength="120" /></label>
+            <label>Data empréstimo<input type="date" id="dataEmprestimo" required /></label>
+            <label>Hora empréstimo<input type="time" id="horaEmprestimo" required /></label>
+            <div class="form__submit"><button class="btn btn--primary" type="submit">Registrar</button></div>
+          </form>
+        </section>
 
-<button class="btn" onclick="exportarCSV()">Exportar para CSV</button>
+        <section class="card">
+          <h3>Filtro avançado + busca em tempo real</h3>
+          <div class="filters">
+            <input id="busca" placeholder="Buscar por equipamento, nome, ID..." />
+            <select id="filtroStatus">
+              <option value="todos">Todos status</option>
+              <option value="pendente">Somente pendentes</option>
+              <option value="devolvida">Somente devolvidos</option>
+            </select>
+            <select id="filtroFuncionario"><option value="">Todos funcionários</option></select>
+            <input type="date" id="filtroDataInicio" />
+            <input type="date" id="filtroDataFim" />
+            <button type="button" class="btn btn--outline" id="limparFiltros">Limpar</button>
+          </div>
+        </section>
 
-<!-- Firebase SDK -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
-import { getFirestore, collection, getDocs, addDoc, updateDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+        <section class="card">
+          <div class="table-box">
+            <table>
+              <thead>
+                <tr>
+                  <th data-sort="numFerramenta">Equipamento</th>
+                  <th data-sort="dataEmprestimo">Data/Hora empréstimo</th>
+                  <th data-sort="quemEntregou">Entregue por</th>
+                  <th data-sort="nomePessoa">Retirado por</th>
+                  <th data-sort="idPessoa">ID</th>
+                  <th data-sort="status">Status</th>
+                  <th data-sort="dataDevolucao">Devolução</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="listaEmprestimos"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button type="button" id="prevPage" class="btn btn--outline">Anterior</button>
+            <span id="pageInfo">Página 1 de 1</span>
+            <button type="button" id="nextPage" class="btn btn--outline">Próxima</button>
+          </div>
+        </section>
+      </section>
 
-const firebaseConfig = {
-  apiKey: "AIzaSyDR5LfYXB0KV63MDsiW_E5z8TemwlSfTGA",
-  authDomain: "camposworkbench.firebaseapp.com",
-  projectId: "camposworkbench",
-  storageBucket: "camposworkbench.firebasestorage.app",
-  messagingSenderId: "588651522200",
-  appId: "1:588651522200:web:80b95c0c44b4edc95888ed"
-};
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+      <section id="view-cadastros" class="view">
+        <div class="grid-2">
+          <section class="card">
+            <h3>Cadastro de equipamento</h3>
+            <form id="formEquipamento" class="form">
+              <label>Número<input id="equipNumero" required /></label>
+              <label>Nome<input id="equipNome" required /></label>
+              <button class="btn btn--primary" type="submit">Salvar equipamento</button>
+            </form>
+            <ul id="listaEquipamentos" class="items"></ul>
+          </section>
+          <section class="card">
+            <h3>Cadastro de funcionário</h3>
+            <form id="formFuncionario" class="form">
+              <label>ID<input id="funcId" required /></label>
+              <label>Nome<input id="funcNome" required /></label>
+              <button class="btn btn--primary" type="submit">Salvar funcionário</button>
+            </form>
+            <ul id="listaFuncionarios" class="items"></ul>
+          </section>
+        </div>
+      </section>
 
-window.funcionarios = [
-    { id: '404', nome: 'Paulo Campos' },
-    { id: '123', nome: 'Sergio Ramos' },
-    { id: '789', nome: 'Carlos Oliveira' },  
-    { id: '101', nome: 'Pereira' },
-    { id: '102', nome: 'Rafael Costa' }    
-];
+      <section id="view-historico" class="view">
+        <div class="grid-2">
+          <section class="card">
+            <h3>Histórico por equipamento</h3>
+            <select id="historicoEquipamento"></select>
+            <div class="table-box table-box--small">
+              <table>
+                <thead><tr><th>Data</th><th>Funcionário</th><th>Status</th></tr></thead>
+                <tbody id="historicoEquipamentoBody"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card">
+            <h3>Histórico por funcionário</h3>
+            <select id="historicoFuncionario"></select>
+            <div class="table-box table-box--small">
+              <table>
+                <thead><tr><th>Equipamento</th><th>Data</th><th>Status</th></tr></thead>
+                <tbody id="historicoFuncionarioBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
 
-window.equipamentos = [
-    { numero: "24000", nome: "Rebarbadora" },
-    { numero: "25000", nome: "Aparafusadora" },
-    { numero: "23000", nome: "Martelo" }, 
-    { numero: "26000", nome: "Serra Circular" },
-    { numero: "27000", nome: "Furadeira" }  
-];
+  <datalist id="equipamentosList"></datalist>
+  <datalist id="funcionariosList"></datalist>
+  <datalist id="funcionariosNomeList"></datalist>
 
-// ======== FUNÇÃO PARA FORMATAR DATAS ========
-function formatarData(dataStr) {
-    const d = new Date(dataStr);
-    if (!isNaN(d)) {
-        return ("0" + d.getDate()).slice(-2) + "/" +
-               ("0" + (d.getMonth() + 1)).slice(-2) + "/" +
-               d.getFullYear();
-    }
-    return dataStr;
-}
+  <div id="loading" class="loading hidden">Sincronizando dados...</div>
+  <div id="toastStack" class="toasts"></div>
 
-// ===== LISTAR =====
-window.listar = async function() {
-    const tbody = document.getElementById("listaEmprestimos");
-    const filtro = document.getElementById("busca").value.toLowerCase();
-    tbody.innerHTML = "";
+  <div id="confirmModal" class="modal hidden">
+    <div class="modal__card">
+      <h4 id="confirmTitle">Confirmar ação</h4>
+      <p id="confirmText"></p>
+      <div class="modal__actions">
+        <button id="confirmCancel" class="btn btn--outline">Cancelar</button>
+        <button id="confirmOk" class="btn btn--danger">Confirmar</button>
+      </div>
+    </div>
+  </div>
 
-    const snapshot = await getDocs(collection(db, "emprestimos"));
-    snapshot.forEach((docSnap) => {
-        const e = docSnap.data();
-
-        if (
-            e.numFerramenta.toLowerCase().includes(filtro) ||
-            e.nomePessoa.toLowerCase().includes(filtro) ||
-            e.idPessoa.toLowerCase().includes(filtro)
-        ) {
-            tbody.innerHTML += `
-            <tr>
-                <td>
-                    <a href="#" onclick="verLogFerramenta('${e.numFerramenta}')">${e.numFerramenta}</a><br>
-                    <span class="equip-nome">${e.nomeEquipamento || ""}</span>
-                </td>
-                <td>${formatarData(e.dataEmprestimo)}</td>
-                <td>${e.quemEntregou.toUpperCase()}</td>
-                <td><a href="#" onclick="verLogPessoa('${e.nomePessoa}')">${e.nomePessoa}</a></td>
-                <td>${e.idPessoa}</td>
-                <td class="${e.devolvida ? "devolvida" : "pendente"}">
-                    ${e.devolvida ? "Devolvida" : "Pendente"}
-                </td>
-                <td>${e.dataDevolucao || "-"}</td>
-                <td>
-                    ${
-                      !e.devolvida
-                        ? `<button onclick="marcarDevolvido('${docSnap.id}')">Devolver</button>`
-                        : ""
-                    }
-                    <span class="excluir" onclick="excluirEmprestimo('${docSnap.id}')">X</span>
-                </td>
-            </tr>`;
-        }
-    });
-};
-
-// ===== MARCAR COMO DEVOLVIDO =====
-window.marcarDevolvido = async function(id) {
-    const docRef = doc(db, "emprestimos", id);
-    await updateDoc(docRef, {
-        devolvida: true,
-        dataDevolucao: new Date().toLocaleDateString("pt-BR"),
-    });
-    listar();
-};
-
-// ===== LOG FERRAMENTA =====
-window.verLogFerramenta = async function(numFerramenta) {
-    document.getElementById("numFerramentaLog").textContent = numFerramenta;
-    const tbody = document.getElementById("logHistorico");
-    tbody.innerHTML = "";
-
-    const snapshot = await getDocs(collection(db, "emprestimos"));
-    snapshot.forEach((docSnap) => {
-        const r = docSnap.data();
-        if (r.numFerramenta === numFerramenta) {
-            tbody.innerHTML += `
-            <tr>
-                <td>${formatarData(r.dataEmprestimo)}</td>
-                <td>${r.nomePessoa}</td>
-                <td>${r.idPessoa}</td>
-                <td class="${r.devolvida ? "devolvida" : "pendente"}">
-                    ${r.devolvida ? "Devolvida" : "Pendente"}
-                </td>
-                <td>${r.dataDevolucao || "-"}</td>
-            </tr>`;
-        }
-    });
-
-    document.getElementById("logFerramenta").style.display = "block";
-    document.getElementById("listaEmprestimos").style.display = "none";
-};
-
-// ===== LOG PESSOA =====
-window.verLogPessoa = async function(nomePessoa) {
-    document.getElementById("nomePessoaLog").textContent = nomePessoa;
-    const tbody = document.getElementById("logHistoricoPessoa");
-    tbody.innerHTML = "";
-
-    const snapshot = await getDocs(collection(db, "emprestimos"));
-    snapshot.forEach((docSnap) => {
-        const r = docSnap.data();
-        if (r.nomePessoa === nomePessoa) {
-            tbody.innerHTML += `
-            <tr>
-                <td>${r.numFerramenta} - ${r.nomeEquipamento || ""}</td>
-                <td>${formatarData(r.dataEmprestimo)}</td>
-                <td class="${r.devolvida ? "devolvida" : "pendente"}">
-                    ${r.devolvida ? "Devolvida" : "Pendente"}
-                </td>
-                <td>${r.dataDevolucao || "-"}</td>
-            </tr>`;
-        }
-    });
-
-    document.getElementById("logPessoa").style.display = "block";
-    document.getElementById("listaEmprestimos").style.display = "none";
-};
-
-// ===== EXCLUIR =====
-window.excluirEmprestimo = async function(id) {
-    if (confirm("Deseja realmente excluir este registro?")) {
-        await deleteDoc(doc(db, "emprestimos", id));
-        listar();
-    }
-};
-
-// ===== CSV =====
-window.exportarCSV = async function() {
-    const headers = [
-        "Nº Ferramenta",
-        "Nome Equipamento",
-        "Data",
-        "Entregue por",
-        "Retirado por",
-        "ID",
-        "Status",
-        "Data Devolução",
-    ];
-
-    const rows = [];
-    const snapshot = await getDocs(collection(db, "emprestimos"));
-
-    snapshot.forEach((docSnap) => {
-        const e = docSnap.data();
-        rows.push([
-            e.numFerramenta,
-            e.nomeEquipamento || "",
-            formatarData(e.dataEmprestimo),
-            e.quemEntregou.toUpperCase(),
-            e.nomePessoa,
-            e.idPessoa,
-            e.devolvida ? "Devolvida" : "Pendente",
-            e.dataDevolucao || "-",
-        ]);
-    });
-
-    let csvContent =
-        "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
-    rows.forEach((r) => {
-        csvContent += r.join(",") + "\n";
-    });
-
-    const link = document.createElement("a");
-    link.href = encodeURI(csvContent);
-    link.download = "emprestimos_ferramentas.csv";
-    link.click();
-};
-
-// ===== REGISTRAR =====
-document.getElementById("formEmprestimo").addEventListener("submit", async function(event) {
-    event.preventDefault();
-
-    const numFerramenta = document.getElementById("numFerramenta").value;
-    const equip = equipamentos.find((e) => e.numero === numFerramenta);
-
-    if (!equip) {
-        alert("Número de ferramenta não encontrado na lista cadastrada!");
-        return;
-    }
-
-    const snapshot = await getDocs(collection(db, "emprestimos"));
-    let duplicado = false;
-    snapshot.forEach((docSnap) => {
-        const e = docSnap.data();
-        if (e.numFerramenta === numFerramenta && !e.devolvida) {
-            duplicado = true;
-        }
-    });
-
-    if (duplicado) {
-        alert("Este equipamento já está emprestado.");
-        return;
-    }
-
-    await addDoc(collection(db, "emprestimos"), {
-        numFerramenta,
-        nomeEquipamento: equip.nome,
-        quemEntregou: document.getElementById("quemEntregou").value,
-        nomePessoa: document.getElementById("nomePessoa").value,
-        idPessoa: document.getElementById("idPessoa").value,
-        dataEmprestimo: document.getElementById("dataEmprestimo").value,
-        devolvida: false,
-        dataDevolucao: null,
-    });
-
-    this.reset();
-    listar();
-});
-
-// ===== AUTOCOMPLETE \\ FUNCIONÁRIOS =====
-document.getElementById("idPessoa").addEventListener("input", function() {
-    const f = funcionarios.find((p) => p.id === this.value);
-    document.getElementById("nomePessoa").value = f ? f.nome : "";
-});
-
-// ===== AUTOCOMPLETE \\ EQUIPAMENTOS =====
-document.getElementById("numFerramenta").addEventListener("input", function() {
-    this.value = this.value.replace(/\D/g, "");
-    const e = equipamentos.find((x) => x.numero === this.value);
-    document.getElementById("nomeEquipamento").value = e ? e.nome : "";
-});
-
-// ===== BUSCA =====
-document.getElementById("busca").addEventListener("input", listar);
-
-// ===== INICIAR =====
-listar();
-</script>
-
-
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
