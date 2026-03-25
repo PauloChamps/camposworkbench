@@ -1,39 +1,24 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  getFirestore,
-  limit,
-  onSnapshot,
-  query,
-  updateDoc,
-  where,
-} from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+const equipamentos = [
+  { numero: "24000", nome: "Rebarbadora" },
+  { numero: "25000", nome: "Aparafusadora" },
+];
 
-const firebaseConfig = {
-  apiKey: "AIzaSyDR5LfYXB0KV63MDsiW_E5z8TemwlSfTGA",
-  authDomain: "camposworkbench.firebaseapp.com",
-  projectId: "camposworkbench",
-  storageBucket: "camposworkbench.firebasestorage.app",
-  messagingSenderId: "588651522200",
-  appId: "1:588651522200:web:80b95c0c44b4edc95888ed",
-};
+const funcionarios = [
+  { id: "101", nome: "João Silva" },
+  { id: "102", nome: "Maria Souza" },
+];
 
-const db = getFirestore(initializeApp(firebaseConfig));
+let emprestimos = [];
+
+const STORAGE_KEY = "campos_workbench_emprestimos_v1";
+
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  emprestimos: [],
-  equipamentos: [],
-  funcionarios: [],
   sortBy: "dataEmprestimo",
   sortDirection: "desc",
   page: 1,
   perPage: 8,
-  unsubscribers: [],
 };
 
 let equipmentChart;
@@ -44,6 +29,7 @@ const formatDateBR = (v) => {
   const parsed = new Date(`${v}T00:00:00`);
   return Number.isNaN(parsed.getTime()) ? v : parsed.toLocaleDateString("pt-BR");
 };
+
 const normalize = (v = "") => v.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const nowTime = () => new Date().toTimeString().slice(0, 5);
@@ -70,6 +56,7 @@ function confirmAction({ title, text, onConfirm }) {
     onConfirm?.();
     cleanup();
   };
+
   const cleanup = () => {
     $("confirmModal").classList.add("hidden");
     $("confirmCancel").removeEventListener("click", cancel);
@@ -87,6 +74,20 @@ function isOverdue(record) {
   return (Date.now() - base) / 86400000 >= 2;
 }
 
+function saveEmprestimos() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(emprestimos));
+}
+
+function loadEmprestimos() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    emprestimos = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(emprestimos)) emprestimos = [];
+  } catch {
+    emprestimos = [];
+  }
+}
+
 function applyFiltersAndSort() {
   const q = normalize($("busca").value.trim());
   const status = $("filtroStatus").value;
@@ -94,7 +95,7 @@ function applyFiltersAndSort() {
   const start = $("filtroDataInicio").value;
   const end = $("filtroDataFim").value;
 
-  return state.emprestimos
+  return emprestimos
     .filter((e) => {
       const target = normalize(`${e.numFerramenta} ${e.nomeEquipamento || ""} ${e.nomePessoa} ${e.idPessoa}`);
       const byQ = !q || target.includes(q);
@@ -142,8 +143,8 @@ function renderTable() {
       </td>
       <td>${r.dataDevolucao ? `${formatDateBR(r.dataDevolucao)} ${r.horaDevolucao || ""}` : "-"}</td>
       <td>
-        ${!r.devolvida ? `<button class="btn btn--primary js-return" data-id="${r.docId}">Devolver</button>` : ""}
-        <button class="btn btn--danger js-delete" data-id="${r.docId}">Excluir</button>
+        ${!r.devolvida ? `<button class="btn btn--primary js-return" data-id="${r.id}">Devolver</button>` : ""}
+        <button class="btn btn--danger js-delete" data-id="${r.id}">Excluir</button>
       </td>
     </tr>`,
     )
@@ -153,30 +154,30 @@ function renderTable() {
 }
 
 function renderRegisters() {
-  $("listaEquipamentos").innerHTML = state.equipamentos.map((e) => `<li><strong>${e.numero}</strong> — ${e.nome}</li>`).join("");
-  $("listaFuncionarios").innerHTML = state.funcionarios.map((f) => `<li><strong>${f.id}</strong> — ${f.nome}</li>`).join("");
+  $("listaEquipamentos").innerHTML = equipamentos.map((e) => `<li><strong>${e.numero}</strong> — ${e.nome}</li>`).join("");
+  $("listaFuncionarios").innerHTML = funcionarios.map((f) => `<li><strong>${f.id}</strong> — ${f.nome}</li>`).join("");
 
-  $("equipamentosList").innerHTML = state.equipamentos.map((e) => `<option value="${e.numero}">${e.nome}</option>`).join("");
-  $("funcionariosList").innerHTML = state.funcionarios.map((f) => `<option value="${f.id}">${f.nome}</option>`).join("");
-  $("funcionariosNomeList").innerHTML = state.funcionarios.map((f) => `<option value="${f.nome}">${f.id}</option>`).join("");
+  $("equipamentosList").innerHTML = equipamentos.map((e) => `<option value="${e.numero}">${e.nome}</option>`).join("");
+  $("funcionariosList").innerHTML = funcionarios.map((f) => `<option value="${f.id}">${f.nome}</option>`).join("");
+  $("funcionariosNomeList").innerHTML = funcionarios.map((f) => `<option value="${f.nome}">${f.id}</option>`).join("");
 
-  $("filtroFuncionario").innerHTML = `<option value="">Todos funcionários</option>${state.funcionarios
+  $("filtroFuncionario").innerHTML = `<option value="">Todos funcionários</option>${funcionarios
     .map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`)
     .join("")}`;
-  $("historicoEquipamento").innerHTML = `<option value="">Selecione equipamento</option>${state.equipamentos
+  $("historicoEquipamento").innerHTML = `<option value="">Selecione equipamento</option>${equipamentos
     .map((e) => `<option value="${e.numero}">${e.numero} - ${e.nome}</option>`)
     .join("")}`;
-  $("historicoFuncionario").innerHTML = `<option value="">Selecione funcionário</option>${state.funcionarios
+  $("historicoFuncionario").innerHTML = `<option value="">Selecione funcionário</option>${funcionarios
     .map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`)
     .join("")}`;
 }
 
 function renderKpis() {
-  const pendentes = state.emprestimos.filter((e) => !e.devolvida).length;
-  const devolvidosHoje = state.emprestimos.filter((e) => e.devolvida && e.dataDevolucao === todayISO()).length;
-  const atrasados = state.emprestimos.filter((e) => isOverdue(e)).length;
+  const pendentes = emprestimos.filter((e) => !e.devolvida).length;
+  const devolvidosHoje = emprestimos.filter((e) => e.devolvida && e.dataDevolucao === todayISO()).length;
+  const atrasados = emprestimos.filter((e) => isOverdue(e)).length;
 
-  $("kpiTotalEquip").textContent = state.equipamentos.length;
+  $("kpiTotalEquip").textContent = equipamentos.length;
   $("kpiPendentes").textContent = pendentes;
   $("kpiDevolvidosHoje").textContent = devolvidosHoje;
   $("kpiAtrasados").textContent = atrasados;
@@ -186,7 +187,7 @@ function renderHistory() {
   const eq = $("historicoEquipamento").value;
   const fn = $("historicoFuncionario").value;
 
-  $("historicoEquipamentoBody").innerHTML = state.emprestimos
+  $("historicoEquipamentoBody").innerHTML = emprestimos
     .filter((e) => !eq || e.numFerramenta === eq)
     .map(
       (e) =>
@@ -196,7 +197,7 @@ function renderHistory() {
     )
     .join("");
 
-  $("historicoFuncionarioBody").innerHTML = state.emprestimos
+  $("historicoFuncionarioBody").innerHTML = emprestimos
     .filter((e) => !fn || e.idPessoa === fn)
     .map(
       (e) =>
@@ -210,7 +211,8 @@ function renderHistory() {
 function renderCharts() {
   const eqMap = {};
   const fnMap = {};
-  state.emprestimos.forEach((e) => {
+
+  emprestimos.forEach((e) => {
     eqMap[e.numFerramenta] = (eqMap[e.numFerramenta] || 0) + 1;
     fnMap[e.idPessoa] = (fnMap[e.idPessoa] || 0) + 1;
   });
@@ -244,248 +246,83 @@ function refreshUI() {
   renderCharts();
 }
 
-async function seedIfNeeded() {
-  try {
-    if (!state.equipamentos.length) {
-      await Promise.all(
-        [
-          { numero: "24000", nome: "Rebarbadora" },
-          { numero: "25000", nome: "Aparafusadora" },
-          { numero: "23000", nome: "Martelo" },
-          { numero: "26000", nome: "Serra Circular" },
-          { numero: "27000", nome: "Furadeira" },
-        ].map((item) => addDoc(collection(db, "equipamentos"), item)),
-      );
-    }
-
-    if (!state.funcionarios.length) {
-      await Promise.all(
-        [
-          { id: "404", nome: "Paulo Campos" },
-          { id: "123", nome: "Sergio Ramos" },
-          { id: "789", nome: "Carlos Oliveira" },
-          { id: "101", nome: "Pereira" },
-          { id: "102", nome: "Rafael Costa" },
-        ].map((item) => addDoc(collection(db, "funcionarios"), item)),
-      );
-    }
-  } catch (error) {
-    console.error(error);
-    notify("Falha ao inicializar dados base.", "error");
-  }
-}
-
-async function initialLoad() {
-  showLoading(true);
-  try {
-    const [emprestimosSnap, equipamentosSnap, funcionariosSnap] = await Promise.all([
-      getDocs(collection(db, "emprestimos")),
-      getDocs(collection(db, "equipamentos")),
-      getDocs(collection(db, "funcionarios")),
-    ]);
-
-    state.emprestimos = emprestimosSnap.docs.map((d) => ({ docId: d.id, ...d.data() }));
-    state.equipamentos = equipamentosSnap.docs.map((d) => ({ docId: d.id, ...d.data() }));
-    state.funcionarios = funcionariosSnap.docs.map((d) => ({ docId: d.id, ...d.data() }));
-
-    await seedIfNeeded();
-    refreshUI();
-  } catch (error) {
-    console.error(error);
-    notify("Erro ao carregar dados iniciais.", "error");
-  } finally {
-    showLoading(false);
-  }
-}
-
-function setupRealtimeSync() {
-  state.unsubscribers.forEach((unsub) => unsub());
-  state.unsubscribers = [];
-
-  const unEmp = onSnapshot(
-    collection(db, "emprestimos"),
-    (snap) => {
-      state.emprestimos = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
-      refreshUI();
-    },
-    (error) => {
-      console.error(error);
-      notify("Falha na atualização de empréstimos.", "error");
-    },
-  );
-
-  const unEq = onSnapshot(
-    collection(db, "equipamentos"),
-    (snap) => {
-      state.equipamentos = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
-      refreshUI();
-    },
-    (error) => {
-      console.error(error);
-      notify("Falha na atualização de equipamentos.", "error");
-    },
-  );
-
-  const unFn = onSnapshot(
-    collection(db, "funcionarios"),
-    (snap) => {
-      state.funcionarios = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
-      refreshUI();
-    },
-    (error) => {
-      console.error(error);
-      notify("Falha na atualização de funcionários.", "error");
-    },
-  );
-
-  state.unsubscribers.push(unEmp, unEq, unFn);
-}
-
-async function lookupEquipamentoNumero(numero) {
-  const local = state.equipamentos.find((e) => e.numero === numero);
-  if (local) return local;
-
-  const snap = await getDocs(query(collection(db, "equipamentos"), where("numero", "==", numero), limit(1)));
-  return snap.empty ? null : snap.docs[0].data();
-}
-
-async function lookupFuncionarioId(id) {
-  const local = state.funcionarios.find((f) => f.id === id);
-  if (local) return local;
-
-  const snap = await getDocs(query(collection(db, "funcionarios"), where("id", "==", id), limit(1)));
-  return snap.empty ? null : snap.docs[0].data();
-}
-
-async function createLoan(event) {
+function createLoan(event) {
   event.preventDefault();
 
-  const payload = {
-    numFerramenta: $("numFerramenta").value.replace(/\D/g, ""),
-    nomeEquipamento: $("nomeEquipamento").value.trim(),
-    quemEntregou: $("quemEntregou").value.trim(),
-    idPessoa: $("idPessoa").value.trim(),
-    nomePessoa: $("nomePessoa").value.trim(),
-    dataEmprestimo: $("dataEmprestimo").value,
-    horaEmprestimo: $("horaEmprestimo").value,
+  const numFerramenta = $("numFerramenta").value.replace(/\D/g, "");
+  const quemEntregou = $("quemEntregou").value.trim();
+  const idPessoa = $("idPessoa").value.trim();
+  const dataEmprestimo = $("dataEmprestimo").value;
+  const horaEmprestimo = $("horaEmprestimo").value;
+
+  const equip = equipamentos.find((e) => e.numero === numFerramenta);
+  if (!equip) {
+    notify("Equipamento não cadastrado.", "error");
+    return;
+  }
+
+  const func = funcionarios.find((f) => f.id === idPessoa);
+  if (!func) {
+    notify("Funcionário não cadastrado.", "error");
+    return;
+  }
+
+  if (!quemEntregou || !dataEmprestimo || !horaEmprestimo) {
+    notify("Preencha todos os campos obrigatórios.", "error");
+    return;
+  }
+
+  if (emprestimos.some((e) => e.numFerramenta === numFerramenta && !e.devolvida)) {
+    notify("Equipamento já está emprestado.", "error");
+    return;
+  }
+
+  const novo = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    numFerramenta,
+    nomeEquipamento: equip.nome,
+    quemEntregou,
+    idPessoa: func.id,
+    nomePessoa: func.nome,
+    dataEmprestimo,
+    horaEmprestimo,
     devolvida: false,
     dataDevolucao: null,
     horaDevolucao: null,
     createdAt: new Date().toISOString(),
   };
 
-  if (!payload.numFerramenta || !payload.nomeEquipamento || !payload.quemEntregou || !payload.idPessoa || !payload.nomePessoa || !payload.dataEmprestimo || !payload.horaEmprestimo) {
-    notify("Preencha todos os campos obrigatórios.", "error");
-    return;
-  }
+  emprestimos.unshift(novo);
+  saveEmprestimos();
 
-  const equip = await lookupEquipamentoNumero(payload.numFerramenta);
-  if (!equip) {
-    notify("Equipamento não cadastrado.", "error");
-    return;
-  }
+  event.target.reset();
+  $("nomeEquipamento").value = "";
+  $("nomePessoa").value = "";
+  $("dataEmprestimo").value = todayISO();
+  $("horaEmprestimo").value = nowTime();
 
-  if (state.emprestimos.some((e) => e.numFerramenta === payload.numFerramenta && !e.devolvida)) {
-    notify("Equipamento já está emprestado.", "error");
-    return;
-  }
-
-  try {
-    showLoading(true);
-    await addDoc(collection(db, "emprestimos"), payload);
-    event.target.reset();
-    $("dataEmprestimo").value = todayISO();
-    $("horaEmprestimo").value = nowTime();
-    notify("Empréstimo registrado com sucesso.");
-  } catch (error) {
-    console.error(error);
-    notify("Erro ao registrar empréstimo.", "error");
-  } finally {
-    showLoading(false);
-  }
+  notify("Empréstimo registrado com sucesso.");
+  refreshUI();
 }
 
-async function markAsReturned(docId) {
-  try {
-    showLoading(true);
-    const now = new Date();
-    await updateDoc(doc(db, "emprestimos", docId), {
-      devolvida: true,
-      dataDevolucao: now.toISOString().slice(0, 10),
-      horaDevolucao: now.toTimeString().slice(0, 5),
-    });
-    notify("Devolução registrada.");
-  } catch (error) {
-    console.error(error);
-    notify("Erro ao registrar devolução.", "error");
-  } finally {
-    showLoading(false);
-  }
+function markAsReturned(id) {
+  const item = emprestimos.find((e) => e.id === id);
+  if (!item) return;
+
+  item.devolvida = true;
+  item.dataDevolucao = todayISO();
+  item.horaDevolucao = nowTime();
+
+  saveEmprestimos();
+  notify("Devolução registrada.");
+  refreshUI();
 }
 
-async function removeLoan(docId) {
-  try {
-    showLoading(true);
-    await deleteDoc(doc(db, "emprestimos", docId));
-    notify("Registro removido.");
-  } catch (error) {
-    console.error(error);
-    notify("Erro ao excluir registro.", "error");
-  } finally {
-    showLoading(false);
-  }
-}
-
-async function createEquipment(event) {
-  event.preventDefault();
-  const numero = $("equipNumero").value.replace(/\D/g, "");
-  const nome = $("equipNome").value.trim();
-  if (!numero || !nome) {
-    notify("Informe número e nome.", "error");
-    return;
-  }
-  if (state.equipamentos.some((e) => e.numero === numero)) {
-    notify("Número já cadastrado.", "error");
-    return;
-  }
-
-  try {
-    showLoading(true);
-    await addDoc(collection(db, "equipamentos"), { numero, nome });
-    event.target.reset();
-    notify("Equipamento salvo.");
-  } catch (error) {
-    console.error(error);
-    notify("Erro ao salvar equipamento.", "error");
-  } finally {
-    showLoading(false);
-  }
-}
-
-async function createWorker(event) {
-  event.preventDefault();
-  const id = $("funcId").value.trim();
-  const nome = $("funcNome").value.trim();
-  if (!id || !nome) {
-    notify("Informe ID e nome.", "error");
-    return;
-  }
-  if (state.funcionarios.some((f) => f.id === id)) {
-    notify("ID já cadastrado.", "error");
-    return;
-  }
-
-  try {
-    showLoading(true);
-    await addDoc(collection(db, "funcionarios"), { id, nome });
-    event.target.reset();
-    notify("Funcionário salvo.");
-  } catch (error) {
-    console.error(error);
-    notify("Erro ao salvar funcionário.", "error");
-  } finally {
-    showLoading(false);
-  }
+function removeLoan(id) {
+  emprestimos = emprestimos.filter((e) => e.id !== id);
+  saveEmprestimos();
+  notify("Registro removido.");
+  refreshUI();
 }
 
 function exportCsv() {
@@ -526,43 +363,32 @@ function bindUI() {
   });
 
   $("formEmprestimo").addEventListener("submit", createLoan);
-  $("formEquipamento").addEventListener("submit", createEquipment);
-  $("formFuncionario").addEventListener("submit", createWorker);
 
-  $("numFerramenta").addEventListener("input", async () => {
-    $("numFerramenta").value = $("numFerramenta").value.replace(/\D/g, "");
-    const numero = $("numFerramenta").value;
-    if (!numero) {
-      $("nomeEquipamento").value = "";
-      return;
-    }
-
-    try {
-      const equip = await lookupEquipamentoNumero(numero);
-      $("nomeEquipamento").value = equip?.nome || "";
-    } catch (error) {
-      console.error(error);
-      $("nomeEquipamento").value = "";
-    }
+  $("formEquipamento").addEventListener("submit", (event) => {
+    event.preventDefault();
+    notify("Cadastros fixos em JSON local para operação offline.", "error");
   });
 
-  $("idPessoa").addEventListener("input", async () => {
-    const id = $("idPessoa").value.trim();
-    if (!id) {
-      $("nomePessoa").value = "";
-      return;
-    }
+  $("formFuncionario").addEventListener("submit", (event) => {
+    event.preventDefault();
+    notify("Cadastros fixos em JSON local para operação offline.", "error");
+  });
 
-    try {
-      const func = await lookupFuncionarioId(id);
-      if (func) $("nomePessoa").value = func.nome;
-    } catch (error) {
-      console.error(error);
-    }
+  $("numFerramenta").addEventListener("input", () => {
+    $("numFerramenta").value = $("numFerramenta").value.replace(/\D/g, "");
+    const numero = $("numFerramenta").value;
+    const equip = equipamentos.find((e) => e.numero === numero);
+    $("nomeEquipamento").value = equip?.nome || "";
+  });
+
+  $("idPessoa").addEventListener("input", () => {
+    const id = $("idPessoa").value.trim();
+    const func = funcionarios.find((f) => f.id === id);
+    $("nomePessoa").value = func?.nome || "";
   });
 
   $("nomePessoa").addEventListener("input", () => {
-    const fn = state.funcionarios.find((f) => normalize(f.nome) === normalize($("nomePessoa").value.trim()));
+    const fn = funcionarios.find((f) => normalize(f.nome) === normalize($("nomePessoa").value.trim()));
     if (fn) $("idPessoa").value = fn.id;
   });
 
@@ -644,6 +470,13 @@ function initDefaults() {
   $("horaEmprestimo").value = nowTime();
 }
 
-initDefaults();
-bindUI();
-initialLoad().then(setupRealtimeSync);
+function init() {
+  showLoading(true);
+  loadEmprestimos();
+  initDefaults();
+  bindUI();
+  refreshUI();
+  showLoading(false);
+}
+
+init();
