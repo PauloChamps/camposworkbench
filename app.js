@@ -1,5 +1,17 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
-import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, updateDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  getFirestore,
+  limit,
+  onSnapshot,
+  query,
+  updateDoc,
+  where,
+} from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDR5LfYXB0KV63MDsiW_E5z8TemwlSfTGA",
@@ -21,17 +33,24 @@ const state = {
   sortDirection: "desc",
   page: 1,
   perPage: 8,
+  unsubscribers: [],
 };
 
 let equipmentChart;
 let workerChart;
 
-const formatDateBR = (v) => (v ? new Date(`${v}T00:00:00`).toLocaleDateString("pt-BR") : "-");
+const formatDateBR = (v) => {
+  if (!v) return "-";
+  const parsed = new Date(`${v}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? v : parsed.toLocaleDateString("pt-BR");
+};
 const normalize = (v = "") => v.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const nowTime = () => new Date().toTimeString().slice(0, 5);
 
-function showLoading(show) { $("loading").classList.toggle("hidden", !show); }
+function showLoading(show) {
+  $("loading").classList.toggle("hidden", !show);
+}
 
 function notify(message, type = "success") {
   const toast = document.createElement("div");
@@ -64,7 +83,38 @@ function confirmAction({ title, text, onConfirm }) {
 function isOverdue(record) {
   if (record.devolvida) return false;
   const base = new Date(`${record.dataEmprestimo}T${record.horaEmprestimo || "00:00"}:00`).getTime();
+  if (Number.isNaN(base)) return false;
   return (Date.now() - base) / 86400000 >= 2;
+}
+
+function applyFiltersAndSort() {
+  const q = normalize($("busca").value.trim());
+  const status = $("filtroStatus").value;
+  const func = $("filtroFuncionario").value;
+  const start = $("filtroDataInicio").value;
+  const end = $("filtroDataFim").value;
+
+  return state.emprestimos
+    .filter((e) => {
+      const target = normalize(`${e.numFerramenta} ${e.nomeEquipamento || ""} ${e.nomePessoa} ${e.idPessoa}`);
+      const byQ = !q || target.includes(q);
+      const byStatus = status === "todos" || (status === "devolvida" ? e.devolvida : !e.devolvida);
+      const byFunc = !func || e.idPessoa === func;
+      const byStart = !start || e.dataEmprestimo >= start;
+      const byEnd = !end || e.dataEmprestimo <= end;
+      return byQ && byStatus && byFunc && byStart && byEnd;
+    })
+    .sort((a, b) => {
+      const key = state.sortBy;
+      const dir = state.sortDirection === "asc" ? 1 : -1;
+      let av = a[key] ?? "";
+      let bv = b[key] ?? "";
+      if (key === "status") {
+        av = a.devolvida ? 1 : 0;
+        bv = b.devolvida ? 1 : 0;
+      }
+      return av > bv ? dir : av < bv ? -dir : 0;
+    });
 }
 
 function renderTable() {
@@ -74,7 +124,9 @@ function renderTable() {
   const start = (state.page - 1) * state.perPage;
   const rows = all.slice(start, start + state.perPage);
 
-  $("listaEmprestimos").innerHTML = rows.map((r) => `
+  $("listaEmprestimos").innerHTML = rows
+    .map(
+      (r) => `
     <tr class="${isOverdue(r) ? "overdue" : ""}">
       <td>${r.numFerramenta}<br><small>${r.nomeEquipamento || ""}</small></td>
       <td>${formatDateBR(r.dataEmprestimo)} ${r.horaEmprestimo || ""}</td>
@@ -82,16 +134,20 @@ function renderTable() {
       <td>${r.nomePessoa}</td>
       <td>${r.idPessoa}</td>
       <td>
-        ${r.devolvida
-          ? '<span class="badge badge--done">✅ Devolvida</span>'
-          : '<span class="badge badge--pending">⛔ Pendente</span>'}
+        ${
+          r.devolvida
+            ? '<span class="badge badge--done">✅ Devolvida</span>'
+            : '<span class="badge badge--pending">⛔ Pendente</span>'
+        }
       </td>
       <td>${r.dataDevolucao ? `${formatDateBR(r.dataDevolucao)} ${r.horaDevolucao || ""}` : "-"}</td>
       <td>
         ${!r.devolvida ? `<button class="btn btn--primary js-return" data-id="${r.docId}">Devolver</button>` : ""}
         <button class="btn btn--danger js-delete" data-id="${r.docId}">Excluir</button>
       </td>
-    </tr>`).join("");
+    </tr>`,
+    )
+    .join("");
 
   $("pageInfo").textContent = `Página ${state.page} de ${maxPages}`;
 }
@@ -104,9 +160,15 @@ function renderRegisters() {
   $("funcionariosList").innerHTML = state.funcionarios.map((f) => `<option value="${f.id}">${f.nome}</option>`).join("");
   $("funcionariosNomeList").innerHTML = state.funcionarios.map((f) => `<option value="${f.nome}">${f.id}</option>`).join("");
 
-  $("filtroFuncionario").innerHTML = `<option value="">Todos funcionários</option>${state.funcionarios.map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`).join("")}`;
-  $("historicoEquipamento").innerHTML = `<option value="">Selecione equipamento</option>${state.equipamentos.map((e) => `<option value="${e.numero}">${e.numero} - ${e.nome}</option>`).join("")}`;
-  $("historicoFuncionario").innerHTML = `<option value="">Selecione funcionário</option>${state.funcionarios.map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`).join("")}`;
+  $("filtroFuncionario").innerHTML = `<option value="">Todos funcionários</option>${state.funcionarios
+    .map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`)
+    .join("")}`;
+  $("historicoEquipamento").innerHTML = `<option value="">Selecione equipamento</option>${state.equipamentos
+    .map((e) => `<option value="${e.numero}">${e.numero} - ${e.nome}</option>`)
+    .join("")}`;
+  $("historicoFuncionario").innerHTML = `<option value="">Selecione funcionário</option>${state.funcionarios
+    .map((f) => `<option value="${f.id}">${f.nome} (${f.id})</option>`)
+    .join("")}`;
 }
 
 function renderKpis() {
@@ -124,18 +186,25 @@ function renderHistory() {
   const eq = $("historicoEquipamento").value;
   const fn = $("historicoFuncionario").value;
 
-  const byEq = state.emprestimos
+  $("historicoEquipamentoBody").innerHTML = state.emprestimos
     .filter((e) => !eq || e.numFerramenta === eq)
-    .map((e) => `<tr><td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td><td>${e.nomePessoa}</td><td>${e.devolvida ? "Devolvida" : "Pendente"}</td></tr>`)
+    .map(
+      (e) =>
+        `<tr><td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td><td>${e.nomePessoa}</td><td>${
+          e.devolvida ? "Devolvida" : "Pendente"
+        }</td></tr>`,
+    )
     .join("");
 
-  const byFn = state.emprestimos
+  $("historicoFuncionarioBody").innerHTML = state.emprestimos
     .filter((e) => !fn || e.idPessoa === fn)
-    .map((e) => `<tr><td>${e.numFerramenta} - ${e.nomeEquipamento || ""}</td><td>${formatDateBR(e.dataEmprestimo)} ${e.horaEmprestimo || ""}</td><td>${e.devolvida ? "Devolvida" : "Pendente"}</td></tr>`)
+    .map(
+      (e) =>
+        `<tr><td>${e.numFerramenta} - ${e.nomeEquipamento || ""}</td><td>${formatDateBR(e.dataEmprestimo)} ${
+          e.horaEmprestimo || ""
+        }</td><td>${e.devolvida ? "Devolvida" : "Pendente"}</td></tr>`,
+    )
     .join("");
-
-  $("historicoEquipamentoBody").innerHTML = byEq;
-  $("historicoFuncionarioBody").innerHTML = byFn;
 }
 
 function renderCharts() {
@@ -167,84 +236,125 @@ function renderCharts() {
   });
 }
 
-function applyFiltersAndSort() {
-  const q = normalize($("busca").value.trim());
-  const status = $("filtroStatus").value;
-  const func = $("filtroFuncionario").value;
-  const start = $("filtroDataInicio").value;
-  const end = $("filtroDataFim").value;
-
-  return state.emprestimos
-    .filter((e) => {
-      const target = normalize(`${e.numFerramenta} ${e.nomeEquipamento || ""} ${e.nomePessoa} ${e.idPessoa}`);
-      const byQ = !q || target.includes(q);
-      const byStatus = status === "todos" || (status === "devolvida" ? e.devolvida : !e.devolvida);
-      const byFunc = !func || e.idPessoa === func;
-      const byStart = !start || e.dataEmprestimo >= start;
-      const byEnd = !end || e.dataEmprestimo <= end;
-      return byQ && byStatus && byFunc && byStart && byEnd;
-    })
-    .sort((a, b) => {
-      const key = state.sortBy;
-      const dir = state.sortDirection === "asc" ? 1 : -1;
-      let av = a[key] || "";
-      let bv = b[key] || "";
-      if (key === "status") {
-        av = a.devolvida ? 1 : 0;
-        bv = b.devolvida ? 1 : 0;
-      }
-      return av > bv ? dir : av < bv ? -dir : 0;
-    });
+function refreshUI() {
+  renderRegisters();
+  renderKpis();
+  renderTable();
+  renderHistory();
+  renderCharts();
 }
 
-async function fetchAll() {
+async function seedIfNeeded() {
+  try {
+    if (!state.equipamentos.length) {
+      await Promise.all(
+        [
+          { numero: "24000", nome: "Rebarbadora" },
+          { numero: "25000", nome: "Aparafusadora" },
+          { numero: "23000", nome: "Martelo" },
+          { numero: "26000", nome: "Serra Circular" },
+          { numero: "27000", nome: "Furadeira" },
+        ].map((item) => addDoc(collection(db, "equipamentos"), item)),
+      );
+    }
+
+    if (!state.funcionarios.length) {
+      await Promise.all(
+        [
+          { id: "404", nome: "Paulo Campos" },
+          { id: "123", nome: "Sergio Ramos" },
+          { id: "789", nome: "Carlos Oliveira" },
+          { id: "101", nome: "Pereira" },
+          { id: "102", nome: "Rafael Costa" },
+        ].map((item) => addDoc(collection(db, "funcionarios"), item)),
+      );
+    }
+  } catch (error) {
+    console.error(error);
+    notify("Falha ao inicializar dados base.", "error");
+  }
+}
+
+async function initialLoad() {
   showLoading(true);
   try {
-    const [emprestimos, equipamentos, funcionarios] = await Promise.all([
+    const [emprestimosSnap, equipamentosSnap, funcionariosSnap] = await Promise.all([
       getDocs(collection(db, "emprestimos")),
       getDocs(collection(db, "equipamentos")),
       getDocs(collection(db, "funcionarios")),
     ]);
 
-    state.emprestimos = emprestimos.docs.map((d) => ({ docId: d.id, ...d.data() }));
-    state.equipamentos = equipamentos.docs.map((d) => ({ docId: d.id, ...d.data() }));
-    state.funcionarios = funcionarios.docs.map((d) => ({ docId: d.id, ...d.data() }));
+    state.emprestimos = emprestimosSnap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+    state.equipamentos = equipamentosSnap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+    state.funcionarios = funcionariosSnap.docs.map((d) => ({ docId: d.id, ...d.data() }));
 
-    if (!state.equipamentos.length || !state.funcionarios.length) {
-      await seed();
-      return fetchAll();
-    }
-
-    renderRegisters();
-    renderKpis();
-    renderTable();
-    renderHistory();
-    renderCharts();
-  } catch {
-    notify("Erro ao carregar dados do Firestore.", "error");
+    await seedIfNeeded();
+    refreshUI();
+  } catch (error) {
+    console.error(error);
+    notify("Erro ao carregar dados iniciais.", "error");
   } finally {
     showLoading(false);
   }
 }
 
-async function seed() {
-  const equipamentos = [
-    { numero: "24000", nome: "Rebarbadora" },
-    { numero: "25000", nome: "Aparafusadora" },
-    { numero: "23000", nome: "Martelo" },
-    { numero: "26000", nome: "Serra Circular" },
-    { numero: "27000", nome: "Furadeira" },
-  ];
-  const funcionarios = [
-    { id: "404", nome: "Paulo Campos" },
-    { id: "123", nome: "Sergio Ramos" },
-    { id: "789", nome: "Carlos Oliveira" },
-    { id: "101", nome: "Pereira" },
-    { id: "102", nome: "Rafael Costa" },
-  ];
+function setupRealtimeSync() {
+  state.unsubscribers.forEach((unsub) => unsub());
+  state.unsubscribers = [];
 
-  if (!state.equipamentos.length) await Promise.all(equipamentos.map((e) => addDoc(collection(db, "equipamentos"), e)));
-  if (!state.funcionarios.length) await Promise.all(funcionarios.map((f) => addDoc(collection(db, "funcionarios"), f)));
+  const unEmp = onSnapshot(
+    collection(db, "emprestimos"),
+    (snap) => {
+      state.emprestimos = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+      refreshUI();
+    },
+    (error) => {
+      console.error(error);
+      notify("Falha na atualização de empréstimos.", "error");
+    },
+  );
+
+  const unEq = onSnapshot(
+    collection(db, "equipamentos"),
+    (snap) => {
+      state.equipamentos = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+      refreshUI();
+    },
+    (error) => {
+      console.error(error);
+      notify("Falha na atualização de equipamentos.", "error");
+    },
+  );
+
+  const unFn = onSnapshot(
+    collection(db, "funcionarios"),
+    (snap) => {
+      state.funcionarios = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+      refreshUI();
+    },
+    (error) => {
+      console.error(error);
+      notify("Falha na atualização de funcionários.", "error");
+    },
+  );
+
+  state.unsubscribers.push(unEmp, unEq, unFn);
+}
+
+async function lookupEquipamentoNumero(numero) {
+  const local = state.equipamentos.find((e) => e.numero === numero);
+  if (local) return local;
+
+  const snap = await getDocs(query(collection(db, "equipamentos"), where("numero", "==", numero), limit(1)));
+  return snap.empty ? null : snap.docs[0].data();
+}
+
+async function lookupFuncionarioId(id) {
+  const local = state.funcionarios.find((f) => f.id === id);
+  if (local) return local;
+
+  const snap = await getDocs(query(collection(db, "funcionarios"), where("id", "==", id), limit(1)));
+  return snap.empty ? null : snap.docs[0].data();
 }
 
 async function createLoan(event) {
@@ -264,59 +374,118 @@ async function createLoan(event) {
     createdAt: new Date().toISOString(),
   };
 
-  if (Object.values(payload).some((v) => v === "")) return notify("Preencha todos os campos obrigatórios.", "error");
-  if (!state.equipamentos.some((e) => e.numero === payload.numFerramenta)) return notify("Equipamento não cadastrado.", "error");
-  if (state.emprestimos.some((e) => e.numFerramenta === payload.numFerramenta && !e.devolvida)) return notify("Equipamento já está emprestado.", "error");
+  if (!payload.numFerramenta || !payload.nomeEquipamento || !payload.quemEntregou || !payload.idPessoa || !payload.nomePessoa || !payload.dataEmprestimo || !payload.horaEmprestimo) {
+    notify("Preencha todos os campos obrigatórios.", "error");
+    return;
+  }
 
-  await addDoc(collection(db, "emprestimos"), payload);
-  event.target.reset();
-  $("dataEmprestimo").value = todayISO();
-  $("horaEmprestimo").value = nowTime();
-  notify("Empréstimo registrado com sucesso.");
-  fetchAll();
+  const equip = await lookupEquipamentoNumero(payload.numFerramenta);
+  if (!equip) {
+    notify("Equipamento não cadastrado.", "error");
+    return;
+  }
+
+  if (state.emprestimos.some((e) => e.numFerramenta === payload.numFerramenta && !e.devolvida)) {
+    notify("Equipamento já está emprestado.", "error");
+    return;
+  }
+
+  try {
+    showLoading(true);
+    await addDoc(collection(db, "emprestimos"), payload);
+    event.target.reset();
+    $("dataEmprestimo").value = todayISO();
+    $("horaEmprestimo").value = nowTime();
+    notify("Empréstimo registrado com sucesso.");
+  } catch (error) {
+    console.error(error);
+    notify("Erro ao registrar empréstimo.", "error");
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function markAsReturned(docId) {
-  const now = new Date();
-  await updateDoc(doc(db, "emprestimos", docId), {
-    devolvida: true,
-    dataDevolucao: now.toISOString().slice(0, 10),
-    horaDevolucao: now.toTimeString().slice(0, 5),
-  });
-  notify("Devolução registrada.");
-  fetchAll();
+  try {
+    showLoading(true);
+    const now = new Date();
+    await updateDoc(doc(db, "emprestimos", docId), {
+      devolvida: true,
+      dataDevolucao: now.toISOString().slice(0, 10),
+      horaDevolucao: now.toTimeString().slice(0, 5),
+    });
+    notify("Devolução registrada.");
+  } catch (error) {
+    console.error(error);
+    notify("Erro ao registrar devolução.", "error");
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function removeLoan(docId) {
-  await deleteDoc(doc(db, "emprestimos", docId));
-  notify("Registro removido.");
-  fetchAll();
+  try {
+    showLoading(true);
+    await deleteDoc(doc(db, "emprestimos", docId));
+    notify("Registro removido.");
+  } catch (error) {
+    console.error(error);
+    notify("Erro ao excluir registro.", "error");
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function createEquipment(event) {
   event.preventDefault();
   const numero = $("equipNumero").value.replace(/\D/g, "");
   const nome = $("equipNome").value.trim();
-  if (!numero || !nome) return notify("Informe número e nome.", "error");
-  if (state.equipamentos.some((e) => e.numero === numero)) return notify("Número já cadastrado.", "error");
+  if (!numero || !nome) {
+    notify("Informe número e nome.", "error");
+    return;
+  }
+  if (state.equipamentos.some((e) => e.numero === numero)) {
+    notify("Número já cadastrado.", "error");
+    return;
+  }
 
-  await addDoc(collection(db, "equipamentos"), { numero, nome });
-  event.target.reset();
-  notify("Equipamento salvo.");
-  fetchAll();
+  try {
+    showLoading(true);
+    await addDoc(collection(db, "equipamentos"), { numero, nome });
+    event.target.reset();
+    notify("Equipamento salvo.");
+  } catch (error) {
+    console.error(error);
+    notify("Erro ao salvar equipamento.", "error");
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function createWorker(event) {
   event.preventDefault();
   const id = $("funcId").value.trim();
   const nome = $("funcNome").value.trim();
-  if (!id || !nome) return notify("Informe ID e nome.", "error");
-  if (state.funcionarios.some((f) => f.id === id)) return notify("ID já cadastrado.", "error");
+  if (!id || !nome) {
+    notify("Informe ID e nome.", "error");
+    return;
+  }
+  if (state.funcionarios.some((f) => f.id === id)) {
+    notify("ID já cadastrado.", "error");
+    return;
+  }
 
-  await addDoc(collection(db, "funcionarios"), { id, nome });
-  event.target.reset();
-  notify("Funcionário salvo.");
-  fetchAll();
+  try {
+    showLoading(true);
+    await addDoc(collection(db, "funcionarios"), { id, nome });
+    event.target.reset();
+    notify("Funcionário salvo.");
+  } catch (error) {
+    console.error(error);
+    notify("Erro ao salvar funcionário.", "error");
+  } finally {
+    showLoading(false);
+  }
 }
 
 function exportCsv() {
@@ -334,7 +503,10 @@ function exportCsv() {
     e.horaDevolucao || "-",
   ]);
 
-  const csv = [headers, ...rows].map((line) => line.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(";")).join("\n");
+  const csv = [headers, ...rows]
+    .map((line) => line.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(";"))
+    .join("\n");
+
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -357,29 +529,58 @@ function bindUI() {
   $("formEquipamento").addEventListener("submit", createEquipment);
   $("formFuncionario").addEventListener("submit", createWorker);
 
-  $("numFerramenta").addEventListener("input", () => {
+  $("numFerramenta").addEventListener("input", async () => {
     $("numFerramenta").value = $("numFerramenta").value.replace(/\D/g, "");
-    const e = state.equipamentos.find((item) => item.numero === $("numFerramenta").value);
-    $("nomeEquipamento").value = e?.nome || "";
+    const numero = $("numFerramenta").value;
+    if (!numero) {
+      $("nomeEquipamento").value = "";
+      return;
+    }
+
+    try {
+      const equip = await lookupEquipamentoNumero(numero);
+      $("nomeEquipamento").value = equip?.nome || "";
+    } catch (error) {
+      console.error(error);
+      $("nomeEquipamento").value = "";
+    }
   });
 
-  $("idPessoa").addEventListener("input", () => {
-    const f = state.funcionarios.find((item) => item.id === $("idPessoa").value.trim());
-    if (f) $("nomePessoa").value = f.nome;
+  $("idPessoa").addEventListener("input", async () => {
+    const id = $("idPessoa").value.trim();
+    if (!id) {
+      $("nomePessoa").value = "";
+      return;
+    }
+
+    try {
+      const func = await lookupFuncionarioId(id);
+      if (func) $("nomePessoa").value = func.nome;
+    } catch (error) {
+      console.error(error);
+    }
   });
 
   $("nomePessoa").addEventListener("input", () => {
-    const f = state.funcionarios.find((item) => normalize(item.nome) === normalize($("nomePessoa").value.trim()));
-    if (f) $("idPessoa").value = f.id;
+    const fn = state.funcionarios.find((f) => normalize(f.nome) === normalize($("nomePessoa").value.trim()));
+    if (fn) $("idPessoa").value = fn.id;
   });
 
   ["busca", "filtroStatus", "filtroFuncionario", "filtroDataInicio", "filtroDataFim"].forEach((id) => {
-    $(id).addEventListener("input", () => { state.page = 1; renderTable(); });
-    $(id).addEventListener("change", () => { state.page = 1; renderTable(); });
+    $(id).addEventListener("input", () => {
+      state.page = 1;
+      renderTable();
+    });
+    $(id).addEventListener("change", () => {
+      state.page = 1;
+      renderTable();
+    });
   });
 
   $("limparFiltros").addEventListener("click", () => {
-    ["busca", "filtroDataInicio", "filtroDataFim"].forEach((id) => ($(id).value = ""));
+    ["busca", "filtroDataInicio", "filtroDataFim"].forEach((id) => {
+      $(id).value = "";
+    });
     $("filtroStatus").value = "todos";
     $("filtroFuncionario").value = "";
     state.page = 1;
@@ -405,6 +606,7 @@ function bindUI() {
         onConfirm: () => markAsReturned(btnReturn.dataset.id),
       });
     }
+
     if (btnDelete) {
       confirmAction({
         title: "Excluir empréstimo",
@@ -418,6 +620,7 @@ function bindUI() {
     state.page = Math.max(1, state.page - 1);
     renderTable();
   });
+
   $("nextPage").addEventListener("click", () => {
     const max = Math.max(1, Math.ceil(applyFiltersAndSort().length / state.perPage));
     state.page = Math.min(max, state.page + 1);
@@ -443,4 +646,4 @@ function initDefaults() {
 
 initDefaults();
 bindUI();
-fetchAll();
+initialLoad().then(setupRealtimeSync);
