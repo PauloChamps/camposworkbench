@@ -23,7 +23,6 @@
       <nav class="nav" id="appNav">
         <button class="nav__btn active" data-view="dashboard">📊 Dashboard</button>
         <button class="nav__btn" data-view="emprestimos">🧾 Empréstimos</button>
-        <button class="nav__btn" data-view="cadastros">🗂 Cadastros</button>
         <button class="nav__btn" data-view="historico">📚 Histórico</button>
       </nav>
 
@@ -36,7 +35,7 @@
       <header class="header">
         <div>
           <h2 id="pageTitle">Dashboard</h2>
-          <p class="muted">Versão moderna com Firestore, filtros avançados e análises.</p>
+          <p class="muted">Versão moderna com operação local e foco em produtividade.</p>
         </div>
         <div class="header__actions">
           <button id="exportCsvBtn" class="btn btn--primary">Exportar CSV filtrado</button>
@@ -118,29 +117,6 @@
             <button type="button" id="nextPage" class="btn btn--outline">Próxima</button>
           </div>
         </section>
-      </section>
-
-      <section id="view-cadastros" class="view">
-        <div class="grid-2">
-          <section class="card">
-            <h3>Cadastro de equipamento</h3>
-            <form id="formEquipamento" class="form">
-              <label>Número<input id="equipNumero" required /></label>
-              <label>Nome<input id="equipNome" required /></label>
-              <button class="btn btn--primary" type="submit">Salvar equipamento</button>
-            </form>
-            <ul id="listaEquipamentos" class="items"></ul>
-          </section>
-          <section class="card">
-            <h3>Cadastro de funcionário</h3>
-            <form id="formFuncionario" class="form">
-              <label>ID<input id="funcId" required /></label>
-              <label>Nome<input id="funcNome" required /></label>
-              <button class="btn btn--primary" type="submit">Salvar funcionário</button>
-            </form>
-            <ul id="listaFuncionarios" class="items"></ul>
-          </section>
-        </div>
       </section>
 
       <section id="view-historico" class="view">

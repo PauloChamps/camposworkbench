@@ -154,9 +154,6 @@ function renderTable() {
 }
 
 function renderRegisters() {
-  $("listaEquipamentos").innerHTML = equipamentos.map((e) => `<li><strong>${e.numero}</strong> — ${e.nome}</li>`).join("");
-  $("listaFuncionarios").innerHTML = funcionarios.map((f) => `<li><strong>${f.id}</strong> — ${f.nome}</li>`).join("");
-
   $("equipamentosList").innerHTML = equipamentos.map((e) => `<option value="${e.numero}">${e.nome}</option>`).join("");
   $("funcionariosList").innerHTML = funcionarios.map((f) => `<option value="${f.id}">${f.nome}</option>`).join("");
   $("funcionariosNomeList").innerHTML = funcionarios.map((f) => `<option value="${f.nome}">${f.id}</option>`).join("");
@@ -358,21 +355,11 @@ function bindUI() {
       document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
       btn.classList.add("active");
       $(`view-${btn.dataset.view}`).classList.add("active");
-      $("pageTitle").textContent = btn.textContent.replace(/[📊🧾🗂📚]\s*/, "");
+      $("pageTitle").textContent = btn.textContent.replace(/[📊🧾📚]\s*/, "");
     });
   });
 
   $("formEmprestimo").addEventListener("submit", createLoan);
-
-  $("formEquipamento").addEventListener("submit", (event) => {
-    event.preventDefault();
-    notify("Cadastros fixos em JSON local para operação offline.", "error");
-  });
-
-  $("formFuncionario").addEventListener("submit", (event) => {
-    event.preventDefault();
-    notify("Cadastros fixos em JSON local para operação offline.", "error");
-  });
 
   $("numFerramenta").addEventListener("input", () => {
     $("numFerramenta").value = $("numFerramenta").value.replace(/\D/g, "");
